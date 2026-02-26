@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { getSettings, setSettings, exportAllData, importAllData, clearAllData, defaultSettings } from '@/lib/storage';
 import { AppSettings, AIProvider } from '@/types';
 import { PROVIDER_MODELS, PROVIDER_LABELS, verifyApiKey } from '@/lib/ai';
+import { getAuthState, saveUserAIConfig, getUserAIConfig } from '@/lib/auth';
 
 const providers: AIProvider[] = ['openai', 'anthropic', 'gemini', 'tongyi', 'wenxin', 'deepseek', 'zhipu', 'moonshot', 'custom'];
 
@@ -13,15 +14,32 @@ export default function SettingsPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
   const [verifyResult, setVerifyResult] = useState<{ valid: boolean; message: string; model?: string; latency?: number } | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [balanceInfo, setBalanceInfo] = useState<string | null>(null);
+  const [checkingBalance, setCheckingBalance] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setLocalSettings(getSettings());
+    const s = getSettings();
+    const auth = getAuthState();
+    setIsLoggedIn(auth.isLoggedIn);
+    // 如果已登录，优先使用用户个人的 AI 配置
+    if (auth.isLoggedIn) {
+      const userAI = getUserAIConfig();
+      if (userAI) {
+        s.aiConfig = userAI;
+      }
+    }
+    setLocalSettings(s);
   }, []);
 
   const handleSave = () => {
     setSettings(settings);
+    // 如果已登录，同时保存 AI 配置到用户数据中
+    if (isLoggedIn) {
+      saveUserAIConfig(settings.aiConfig);
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -70,17 +88,24 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold">⚙️ 设置</h1>
 
       {/* AI Configuration */}
       <div className="bg-white rounded-xl p-5 border border-slate-100 space-y-4">
-        <h2 className="font-semibold text-slate-700">🤖 AI 模型配置</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-slate-700">🤖 AI 模型配置</h2>
+          {isLoggedIn ? (
+            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">🔒 已绑定到您的账户</span>
+          ) : (
+            <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">⚠️ 请登录后配置（否则仅本地保存）</span>
+          )}
+        </div>
         
         {/* Provider */}
         <div>
           <label className="block text-sm text-slate-600 mb-1">选择 AI 服务商</label>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {providers.map(p => (
               <button
                 key={p}
@@ -195,6 +220,60 @@ export default function SettingsPage() {
             <p className="text-xs text-slate-400 mt-1">💡 支持 OpenAI 兼容格式的第三方代理，留空则使用官方API地址</p>
           )}
         </div>
+
+        {/* AI 余额查询 */}
+        {settings.aiConfig.apiUrl && settings.aiConfig.apiKey && (
+          <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-600">💰 代理余额查询</span>
+              <button
+                onClick={async () => {
+                  setCheckingBalance(true);
+                  setBalanceInfo(null);
+                  try {
+                    const baseUrl = settings.aiConfig.apiUrl!.replace(/\/v1\/?$/, '');
+                    // 尝试 /v1/dashboard/billing/usage 或 /v1/dashboard/billing/subscription
+                    const subsRes = await fetch(`${baseUrl}/v1/dashboard/billing/subscription`, {
+                      headers: { 'Authorization': `Bearer ${settings.aiConfig.apiKey}` },
+                    });
+                    if (subsRes.ok) {
+                      const data = await subsRes.json();
+                      const total = data.hard_limit_usd || data.system_hard_limit_usd || 0;
+                      const used = data.used || 0;
+                      setBalanceInfo(`总额度: $${total.toFixed(2)} | 已用: $${used.toFixed(2)} | 剩余: $${(total - used).toFixed(2)}`);
+                    } else {
+                      // 尝试另一种余额接口格式
+                      const creditRes = await fetch(`${baseUrl}/v1/dashboard/billing/credit_grants`, {
+                        headers: { 'Authorization': `Bearer ${settings.aiConfig.apiKey}` },
+                      });
+                      if (creditRes.ok) {
+                        const data = await creditRes.json();
+                        setBalanceInfo(`总额度: $${data.total_granted?.toFixed(2) || '?'} | 已用: $${data.total_used?.toFixed(2) || '?'} | 剩余: $${data.total_available?.toFixed(2) || '?'}`);
+                      } else {
+                        setBalanceInfo('⚠️ 该代理不支持余额查询，请到代理商后台查看');
+                      }
+                    }
+                  } catch {
+                    setBalanceInfo('⚠️ 余额查询失败，请到代理商后台查看');
+                  }
+                  setCheckingBalance(false);
+                }}
+                disabled={checkingBalance}
+                className="px-3 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+              >
+                {checkingBalance ? '⏳ 查询中...' : '查询余额'}
+              </button>
+            </div>
+            {balanceInfo && (
+              <p className="text-xs text-slate-500 bg-white rounded px-2 py-1.5">{balanceInfo}</p>
+            )}
+            {settings.aiConfig.apiUrl?.includes('lemonapi') && (
+              <a href="https://tool.lemonapi.site" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
+                🔗 LemonAPI 余额查询工具
+              </a>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Practice Settings */}

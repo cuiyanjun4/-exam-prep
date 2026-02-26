@@ -85,7 +85,7 @@ export default function HomePage() {
           )}
 
           {/* Quick Stats Row */}
-          <div className="grid grid-cols-4 gap-3 mt-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
             <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
               <p className="text-2xl font-bold">{progress?.totalAnswered || 0}</p>
               <p className="text-blue-200 text-xs">已做题</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { User, AuthState, UserRole } from '@/types';
+import { User, AuthState, UserRole, AIConfig } from '@/types';
 
 const KEYS = {
   USERS: 'exam-users',
@@ -233,3 +233,26 @@ export function deleteUser(userId: string): { success: boolean; message: string 
 }
 
 export { AVATARS };
+
+// ==================== 用户 AI 配置 ====================
+
+/** 保存当前用户的 AI 配置 */
+export function saveUserAIConfig(aiConfig: AIConfig): boolean {
+  const auth = getAuthState();
+  if (!auth.currentUser) return false;
+
+  const users = getAllUsers();
+  const idx = users.findIndex(u => u.id === auth.currentUser!.id);
+  if (idx < 0) return false;
+
+  users[idx].aiConfig = aiConfig;
+  setItem(KEYS.USERS, users);
+  setAuthState({ isLoggedIn: true, currentUser: users[idx] });
+  return true;
+}
+
+/** 获取当前用户的 AI 配置 */
+export function getUserAIConfig(): AIConfig | null {
+  const auth = getAuthState();
+  return auth.currentUser?.aiConfig || null;
+}

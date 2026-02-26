@@ -152,6 +152,7 @@ export interface User {
   bio?: string;
   targetScore?: number; // 目标分数
   targetExamDate?: string; // 考试日期
+  aiConfig?: AIConfig; // 用户个人 AI 配置
 }
 
 export interface AuthState {

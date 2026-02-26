@@ -55,6 +55,7 @@ export default function Sidebar() {
       <Link
         key={item.href}
         href={item.href}
+        onClick={() => { if (window.innerWidth < 1024) setCollapsed(true); }}
         className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg transition-colors
           ${isActive
             ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold'
@@ -72,12 +73,12 @@ export default function Sidebar() {
     <>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-4 py-3 flex items-center justify-between">
-        <button onClick={() => setCollapsed(!collapsed)} className="text-xl text-slate-600 dark:text-slate-300">
+        <button onClick={() => setCollapsed(!collapsed)} className="text-xl text-slate-600 dark:text-slate-300 p-1">
           ☰
         </button>
         <h1 className="text-lg font-bold text-blue-600">📘 考公行测题库</h1>
         <div className="flex items-center gap-2">
-          <button onClick={toggleTheme} className="text-lg">
+          <button onClick={toggleTheme} className="text-lg p-1">
             {resolvedTheme === 'dark' ? '☀️' : '🌙'}
           </button>
           {currentUser ? (
@@ -88,12 +89,20 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Mobile backdrop */}
+      {!collapsed && (
+        <div
+          className="lg:hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-sm"
+          onClick={() => setCollapsed(true)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 z-40 h-screen bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex flex-col transition-all duration-300
-          ${collapsed ? 'w-16' : 'w-56'}
-          max-lg:${collapsed ? '-translate-x-full' : 'translate-x-0'}
+          ${collapsed ? 'w-16 max-lg:-translate-x-full' : 'w-56 max-lg:translate-x-0'}
           lg:translate-x-0
+          ${collapsed ? 'lg:w-16' : 'lg:w-56'}
         `}
       >
         {/* Logo */}
