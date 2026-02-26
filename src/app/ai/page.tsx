@@ -4,12 +4,10 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getSettings, getRecords, getMistakeQuestionIds, getDailyStats, getProgress } from '@/lib/storage';
 import { getQuestionById } from '@/data';
-import { chatWithAI, buildExplainPrompt, buildReviewPrompt, buildFeynmanCheckPrompt, buildKnowledgeExpandPrompt, buildSimilarQuestionPrompt, buildDailyReviewPrompt, PROVIDER_LABELS, PROVIDER_META, PROVIDER_MODELS } from '@/lib/ai';
-import { AIConfig, AIMessage, AIProvider, Module } from '@/types';
+import { chatWithAI, chatWithAIStructured, buildExplainPrompt, buildReviewPrompt, buildFeynmanCheckPrompt, buildKnowledgeExpandPrompt, buildSimilarQuestionPrompt, buildDailyReviewPrompt, PROVIDER_LABELS, PROVIDER_META, PROVIDER_MODELS } from '@/lib/ai';
+import { AIConfig, AIMessage, AIProvider, Module, StructuredAIResponse, ChatMode } from '@/types';
 import { getMistakeCategories, getTopPriorityMistakes } from '@/lib/mistakeManager';
 import Link from 'next/link';
-
-type ChatMode = 'explain' | 'review' | 'feynman' | 'knowledge' | 'similar' | 'daily' | 'free';
 
 const MODE_INFO: Record<ChatMode, { icon: string; label: string; desc: string; gradient: string }> = {
   daily:     { icon: '📅', label: '每日复盘', desc: '今日AI学习报告',  gradient: 'from-purple-500 to-indigo-600' },
@@ -29,6 +27,7 @@ function AIPageContent() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState('');
+  const [structuredData, setStructuredData] = useState<Record<number, StructuredAIResponse>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,7 +61,7 @@ function AIPageContent() {
     const optionsStr = q.options.map(o => `${o.key}. ${o.text}`).join('\n');
     setMessages([{ role: 'user', content: `请详细解析这道题：\n${q.content}\n\n${optionsStr}` }]);
     const prompt = buildExplainPrompt(q.content, optionsStr, q.answer);
-    await doSendMessage(aiConfig, prompt);
+    await doSendMessage(aiConfig, prompt, 'explain');
   };
 
   // 举一反三
@@ -72,7 +71,7 @@ function AIPageContent() {
     setChatMode('similar');
     setMessages([{ role: 'user', content: `🔄 请为这道错题生成举一反三的类似题目：\n${q.content.slice(0, 100)}...` }]);
     const prompt = buildSimilarQuestionPrompt(q.content, q.answer, q.module, q.subType, q.explanation);
-    await doSendMessage(aiConfig, prompt);
+    await doSendMessage(aiConfig, prompt, 'similar');
   };
 
   // 知识拓展
@@ -80,7 +79,7 @@ function AIPageContent() {
     setChatMode('knowledge');
     setMessages([{ role: 'user', content: `📚 请拓展知识点：${module} - ${topic}` }]);
     const prompt = buildKnowledgeExpandPrompt(topic, module);
-    await doSendMessage(aiConfig, prompt);
+    await doSendMessage(aiConfig, prompt, 'knowledge');
   };
 
   // 每日 AI 复盘
@@ -145,10 +144,10 @@ function AIPageContent() {
       mistakeInfo,
       recentDays
     );
-    await doSendMessage(config!, prompt);
+    await doSendMessage(config!, prompt, 'daily');
   };
 
-  const doSendMessage = async (aiConfig: AIConfig, msgs: AIMessage[]) => {
+  const doSendMessage = async (aiConfig: AIConfig, msgs: AIMessage[], mode?: ChatMode) => {
     if (!aiConfig?.apiKey) {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -160,12 +159,29 @@ function AIPageContent() {
     setLoading(true);
     setStreamText('');
 
+    const useStructured = mode && mode !== 'free';
+
     try {
-      const response = await chatWithAI(aiConfig, msgs, (text) => {
-        setStreamText(text);
-      });
-      setMessages(prev => [...prev, { role: 'assistant', content: response || streamText }]);
-      setStreamText('');
+      if (useStructured) {
+        const result = await chatWithAIStructured(aiConfig, msgs, mode, (text) => {
+          setStreamText(text);
+        });
+        const responseText = result.structured?.answer || result.raw;
+        setMessages(prev => {
+          const updated = [...prev, { role: 'assistant', content: responseText }];
+          if (result.structured) {
+            setStructuredData(sd => ({ ...sd, [updated.length - 1]: result.structured! }));
+          }
+          return updated;
+        });
+        setStreamText('');
+      } else {
+        const response = await chatWithAI(aiConfig, msgs, (text) => {
+          setStreamText(text);
+        });
+        setMessages(prev => [...prev, { role: 'assistant', content: response || streamText }]);
+        setStreamText('');
+      }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : '未知错误';
       setMessages(prev => [...prev, {
@@ -189,7 +205,7 @@ function AIPageContent() {
 
     setMessages(prev => [...prev, { role: 'user', content: input }]);
     setInput('');
-    await doSendMessage(config, msgs);
+    await doSendMessage(config, msgs, chatMode);
   };
 
   const handleQuickAction = async (mode: ChatMode) => {
@@ -225,7 +241,7 @@ function AIPageContent() {
 
       const prompt = buildReviewPrompt(total, correct, mistakes.slice(0, 10));
       setMessages([{ role: 'user', content: `请分析我最近的${total}道做题记录（正确${correct}道，错误${total - correct}道）` }]);
-      await doSendMessage(config!, prompt);
+      await doSendMessage(config!, prompt, 'review');
       return;
     }
 
@@ -255,6 +271,7 @@ function AIPageContent() {
   const clearChat = () => {
     setMessages([]);
     setStreamText('');
+    setStructuredData({});
     setChatMode('free');
   };
 
@@ -398,12 +415,74 @@ function AIPageContent() {
                 {msg.role === 'user' ? '👤' : '🤖'}
               </div>
               {/* Bubble */}
-              <div className={`max-w-[78%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-tr-md'
-                  : 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100'
-              }`}>
-                {msg.content}
+              <div className={`max-w-[78%] ${msg.role === 'user' ? '' : 'space-y-2'}`}>
+                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                  msg.role === 'user'
+                    ? 'bg-blue-600 text-white rounded-tr-md'
+                    : 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100'
+                }`}>
+                  {msg.content}
+                </div>
+
+                {/* 结构化响应渲染：置信度 + 不确定点 + 引用 */}
+                {msg.role === 'assistant' && structuredData[i] && (() => {
+                  const sd = structuredData[i];
+                  const confidenceColor = sd.confidence >= 0.8 ? 'bg-green-100 text-green-700 border-green-200'
+                    : sd.confidence >= 0.6 ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                    : 'bg-red-100 text-red-700 border-red-200';
+                  const confidenceLabel = sd.confidence >= 0.8 ? '高置信' : sd.confidence >= 0.6 ? '中置信' : '低置信';
+                  return (
+                    <div className="space-y-2 mt-1">
+                      {/* 置信度徽章 */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-full border ${confidenceColor}`}>
+                          {sd.confidence >= 0.8 ? '✅' : sd.confidence >= 0.6 ? '⚠️' : '❗'} {confidenceLabel}
+                          <span className="font-mono text-[10px] opacity-70">{Math.round(sd.confidence * 100)}%</span>
+                        </span>
+                        {sd.key_points.length > 0 && (
+                          <span className="text-[10px] text-slate-400">{sd.key_points.length} 个关键点</span>
+                        )}
+                      </div>
+
+                      {/* 低置信警告 */}
+                      {sd.confidence < 0.6 && (
+                        <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5">
+                          <span className="mt-0.5">⚠️</span>
+                          <span>AI 对此回答置信度较低，建议核实后参考。请查阅官方教材或权威解析确认信息。</span>
+                        </div>
+                      )}
+
+                      {/* 不确定点 */}
+                      {sd.uncertain_points.length > 0 && (
+                        <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                          <p className="text-xs font-bold text-amber-700 mb-1">⚠️ 不确定点：</p>
+                          <ul className="space-y-0.5">
+                            {sd.uncertain_points.map((p, pi) => (
+                              <li key={pi} className="text-xs text-amber-600 flex items-start gap-1">
+                                <span>•</span><span>{p}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* 引用来源 */}
+                      {sd.citations && sd.citations.length > 0 && (
+                        <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-xs font-bold text-blue-700 mb-1">📚 引用来源：</p>
+                          <ul className="space-y-0.5">
+                            {sd.citations.map((c, ci) => (
+                              <li key={ci} className="text-xs text-blue-600 flex items-start gap-1">
+                                <span className="font-mono text-blue-400">[C{ci + 1}]</span>
+                                <span>{c}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}

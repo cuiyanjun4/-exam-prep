@@ -13,7 +13,18 @@
  * - 自定义 (任意兼容OpenAI格式的API)
  */
 
-import { AIConfig, AIMessage, AIProvider } from '@/types';
+import { AIConfig, AIMessage, AIProvider, ChatMode, StructuredAIResponse } from '@/types';
+
+// ==================== 按场景控温 ====================
+export const CHAT_MODE_TEMPERATURES: Record<ChatMode, number> = {
+  explain:   0.1,   // 解析要精确
+  review:    0.1,   // 复盘要客观
+  feynman:   0.1,   // 验证要严格
+  knowledge: 0.1,   // 知识拓展要准确
+  similar:   0.3,   // 生成习题可以稍微灵活
+  daily:     0.1,   // 日报要客观
+  free:      0.5,   // 自由问答较宽松
+};
 
 // 各提供商的API端点
 const API_ENDPOINTS: Record<AIProvider, string> = {
@@ -109,12 +120,15 @@ export const PROVIDER_META: Record<AIProvider, { icon: string; color: string; de
 
 /**
  * 调用AI接口（兼容 OpenAI / Anthropic / Gemini 格式）
+ * @param temperature 温度参数（不传则默认 0.7）
  */
 export async function chatWithAI(
   config: AIConfig,
   messages: AIMessage[],
-  onStream?: (text: string) => void
+  onStream?: (text: string) => void,
+  temperature?: number
 ): Promise<string> {
+  const temp = temperature ?? 0.7;
   // 优先使用用户自定义的代理地址，否则使用官方地址
   const endpoint = config.apiUrl 
     ? config.apiUrl.replace(/\/+$/, '') + '/chat/completions'
@@ -128,7 +142,7 @@ export async function chatWithAI(
 
   // Anthropic 使用不同的请求格式
   if (config.provider === 'anthropic') {
-    return await callAnthropic(config, messages, onStream);
+    return await callAnthropic(config, messages, onStream, temp);
   }
 
   // Google Gemini: 如果设置了代理地址，使用 OpenAI 兼容格式；否则使用原生 API
@@ -147,7 +161,7 @@ export async function chatWithAI(
             model: config.model,
             messages,
             stream: !!onStream,
-            temperature: 0.7,
+            temperature: temp,
             max_tokens: 4096,
           }),
         });
@@ -165,7 +179,7 @@ export async function chatWithAI(
         throw new Error('Gemini代理调用失败: 未知错误');
       }
     }
-    return await callGemini(config, messages, onStream);
+    return await callGemini(config, messages, onStream, temp);
   }
 
   try {
@@ -179,7 +193,7 @@ export async function chatWithAI(
         model: config.model,
         messages,
         stream: !!onStream,
-        temperature: 0.7,
+        temperature: temp,
         max_tokens: 4096,
       }),
     });
@@ -209,7 +223,8 @@ export async function chatWithAI(
 async function callAnthropic(
   config: AIConfig,
   messages: AIMessage[],
-  onStream?: (text: string) => void
+  onStream?: (text: string) => void,
+  temperature?: number
 ): Promise<string> {
   const systemMsg = messages.find(m => m.role === 'system')?.content || '';
   const chatMsgs = messages.filter(m => m.role !== 'system').map(m => ({
@@ -229,6 +244,7 @@ async function callAnthropic(
       body: JSON.stringify({
         model: config.model,
         max_tokens: 4096,
+        temperature: temperature ?? 0.7,
         system: systemMsg,
         messages: chatMsgs,
         stream: !!onStream,
@@ -258,7 +274,8 @@ async function callAnthropic(
 async function callGemini(
   config: AIConfig,
   messages: AIMessage[],
-  onStream?: (text: string) => void
+  onStream?: (text: string) => void,
+  temperature?: number
 ): Promise<string> {
   const systemMsg = messages.find(m => m.role === 'system')?.content || '';
   const chatMsgs = messages.filter(m => m.role !== 'system').map(m => ({
@@ -278,7 +295,7 @@ async function callGemini(
         contents: chatMsgs,
         systemInstruction: systemMsg ? { parts: [{ text: systemMsg }] } : undefined,
         generationConfig: {
-          temperature: 0.7,
+          temperature: temperature ?? 0.7,
           maxOutputTokens: 4096,
         },
       }),
@@ -547,14 +564,21 @@ export async function verifyApiKey(
 // ==================== 预设Prompt模板 ====================
 
 /**
- * AI解题助手 - 详细解析一道题
+ * AI解题助手 - 详细解析一道题（带证据引用）
  */
 export function buildExplainPrompt(question: string, options: string, answer: string): AIMessage[] {
+  const context = buildCitationContext([
+    { label: '题干', text: question },
+    { label: '选项', text: options },
+    { label: '标准答案', text: answer },
+  ]);
+
   return [
     {
       role: 'system',
-      content: `你是一位资深的公务员考试行测辅导专家，擅长将复杂的题目用简单易懂的方式讲解。
-请提供以下内容：
+      content: wrapSystemPrompt(
+        `你是一位资深的公务员考试行测辅导专家，擅长将复杂的题目用简单易懂的方式讲解。
+在 answer 字段中提供以下内容：
 1. 【题型识别】这道题属于什么题型
 2. 【解题思路】一步步的解题思路
 3. 【正确答案】并解释为什么正确
@@ -562,6 +586,9 @@ export function buildExplainPrompt(question: string, options: string, answer: st
 5. 【知识点总结】涉及的核心知识点
 6. 【记忆口诀】如果有的话，给出便于记忆的口诀
 7. 【同类题技巧】解决这类题的通用技巧`,
+        context,
+        'structured'
+      ),
     },
     {
       role: 'user',
@@ -582,17 +609,28 @@ export function buildReviewPrompt(
     .map((m, i) => `${i + 1}. [${m.module}] ${m.question}\n   你的答案：${m.userAnswer}  正确答案：${m.correctAnswer}`)
     .join('\n\n');
 
+  const context = buildCitationContext([
+    { label: '总题数', text: `${totalQuestions}` },
+    { label: '正确数', text: `${correctCount}` },
+    { label: '正确率', text: `${Math.round(correctCount / totalQuestions * 100)}%` },
+    { label: '错题列表', text: mistakeList.slice(0, 2000) },
+  ]);
+
   return [
     {
       role: 'system',
-      content: `你是一位资深公务员考试行测辅导专家。请根据学生的做题结果进行全面复盘分析。
-分析要求：
+      content: wrapSystemPrompt(
+        `你是一位资深公务员考试行测辅导专家。请根据学生的做题结果进行全面复盘分析。
+在 answer 字段中包含：
 1. 【整体表现】正确率评价和整体评估
 2. 【错误分类】按知识点/题型归类错误
 3. 【错误原因分析】是知识盲点、粗心、还是方法不对
 4. 【薄弱环节】指出最需要加强的模块
 5. 【提分建议】针对性的学习建议和策略
 6. 【练习计划】推荐接下来的练习重点`,
+        context,
+        'structured'
+      ),
     },
     {
       role: 'user',
@@ -605,15 +643,25 @@ export function buildReviewPrompt(
  * 费曼学习法验证 - 检查用户的理解是否正确
  */
 export function buildFeynmanCheckPrompt(question: string, answer: string, userExplanation: string): AIMessage[] {
+  const context = buildCitationContext([
+    { label: '题目', text: question },
+    { label: '正确答案', text: answer },
+    { label: '学生理解', text: userExplanation },
+  ]);
+
   return [
     {
       role: 'system',
-      content: `你是一位使用费曼学习法的行测辅导老师。学生用自己的话解释了一道题的答案，请：
+      content: wrapSystemPrompt(
+        `你是一位使用费曼学习法的行测辅导老师。学生用自己的话解释了一道题的答案，请在 answer 字段中：
 1. 评估学生的理解是否正确和完整
 2. 指出理解中的偏差或遗漏
 3. 用更准确但仍然通俗的语言补充完善
 4. 给出一个便于记忆的类比或例子
 保持友好鼓励的语气。`,
+        context,
+        'structured'
+      ),
     },
     {
       role: 'user',
@@ -626,17 +674,26 @@ export function buildFeynmanCheckPrompt(question: string, answer: string, userEx
  * 知识点拓展
  */
 export function buildKnowledgeExpandPrompt(topic: string, module: string): AIMessage[] {
+  const context = buildCitationContext([
+    { label: '模块', text: module },
+    { label: '知识点', text: topic },
+  ]);
+
   return [
     {
       role: 'system',
-      content: `你是行测知识点专家。请围绕给定知识点进行拓展，帮助学生构建知识网络。
-请提供：
+      content: wrapSystemPrompt(
+        `你是行测知识点专家。请围绕给定知识点进行拓展，帮助学生构建知识网络。
+在 answer 字段中提供：
 1. 核心概念解释
 2. 相关知识点脉络（思维导图式）
 3. 在行测中的常见考法
 4. 易混淆点辨析
 5. 记忆技巧和口诀
 6. 预测可能出的变形题`,
+        context,
+        'structured'
+      ),
     },
     {
       role: 'user',
@@ -655,10 +712,20 @@ export function buildSimilarQuestionPrompt(
   subType: string,
   explanation: string
 ): AIMessage[] {
+  const context = buildCitationContext([
+    { label: '原题', text: question.slice(0, 500) },
+    { label: '正确答案', text: answer },
+    { label: '模块', text: module },
+    { label: '题型', text: subType },
+    { label: '解析', text: explanation.slice(0, 500) },
+  ]);
+
   return [
     {
       role: 'system',
-      content: `你是行测出题专家。根据给定的错题，生成3道同类型、同难度的练习题，帮助学生举一反三。
+      content: ANTI_HALLUCINATION_PREFIX + `你是行测出题专家。根据给定的错题，生成3道同类型、同难度的练习题，帮助学生举一反三。
+
+${context}
 
 要求：
 1. 每道题考查相同的知识点/题型，但换不同的角度
@@ -666,7 +733,7 @@ export function buildSimilarQuestionPrompt(
 3. 每道题都要有完整的题干、4个选项(A/B/C/D)、正确答案和解析
 4. 解析中要指出该题与原题的共同知识点
 
-请以如下JSON格式输出（确保JSON合法）：
+请以如下JSON格式输出（确保JSON合法，不要有 JSON 之外的文本）：
 [
   {
     "content": "题干内容",
@@ -769,4 +836,182 @@ export function buildMistakeAlertPrompt(
       content: `题型：${subType}\n错误模式：${errorPattern}\n已错${wrongCount}次`,
     },
   ];
+}
+
+// ==================== 反幻觉 · 结构化输出 · 证据引用 · 后置校验 ====================
+
+/** 反幻觉硬约束（注入到所有 system prompt 前缀） */
+const ANTI_HALLUCINATION_PREFIX = `【核心约束——违反则回答无效】
+1. 如果你没有确切依据，必须输出"无法确定"，禁止猜测或编造。
+2. 严禁编造法律法规名称、条文编号、颁布年份、统计数据、引用出处。
+3. 每条关键结论必须附带引用编号 [C1]、[C2] 等（对应"上下文"中提供的信息）。没有引用来源的结论不得输出。
+4. 如果上下文不足以回答，请明确说明缺少什么信息，而非自行补充。
+`;
+
+/** 结构化输出要求 */
+const STRUCTURED_OUTPUT_SUFFIX = `
+
+【输出格式要求】
+请严格按以下 JSON 格式输出，不要添加任何 JSON 之外的文本（不要用 markdown 代码块包裹）：
+{
+  "answer": "你的详细回答（Markdown 格式，可以较长）",
+  "key_points": ["关键结论1 [C1]", "关键结论2 [C2]", ...],
+  "uncertain_points": ["不确定/可能不准确的点（如有）"],
+  "confidence": 0.85,
+  "citations": ["[C1] 引用来源说明", "[C2] 引用来源说明", ...]
+}
+其中 confidence 为 0-1 的浮点数，表示你对整体回答的置信度。`;
+
+/**
+ * 构建带证据引用的上下文
+ * 将题目信息编号为 [C1] [C2]... 注入 prompt
+ */
+export function buildCitationContext(pieces: { label: string; text: string }[]): string {
+  if (pieces.length === 0) return '';
+  const lines = pieces.map((p, i) => `[C${i + 1}] ${p.label}: ${p.text}`);
+  return '【上下文（请引用）】\n' + lines.join('\n') + '\n\n';
+}
+
+/**
+ * 把普通 system prompt 包装为反幻觉 + 结构化模式
+ * @param mode - 结构化模式：'structured' 要求 JSON 输出，'text' 保留原始文本模式
+ */
+export function wrapSystemPrompt(
+  originalSystemContent: string,
+  citationContext: string,
+  mode: 'structured' | 'text' = 'structured'
+): string {
+  const base = ANTI_HALLUCINATION_PREFIX + '\n' + originalSystemContent;
+  const context = citationContext ? '\n\n' + citationContext : '';
+  const suffix = mode === 'structured' ? STRUCTURED_OUTPUT_SUFFIX : '';
+  return base + context + suffix;
+}
+
+/**
+ * 校验 AI 返回是否为合法 StructuredAIResponse
+ */
+export function validateAIResponse(raw: string): { ok: boolean; data?: StructuredAIResponse; errors: string[] } {
+  const errors: string[] = [];
+
+  // 尝试提取 JSON（兼容 markdown 代码块包裹）
+  let jsonStr = raw.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim();
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    errors.push('返回内容不是合法 JSON');
+    return { ok: false, errors };
+  }
+
+  // 字段检查
+  if (typeof parsed.answer !== 'string' || !parsed.answer.trim()) {
+    errors.push('缺少 answer 字段或 answer 为空');
+  }
+  if (!Array.isArray(parsed.key_points)) {
+    errors.push('缺少 key_points 数组');
+  }
+  if (!Array.isArray(parsed.uncertain_points)) {
+    errors.push('缺少 uncertain_points 数组');
+  }
+  if (typeof parsed.confidence !== 'number' || parsed.confidence < 0 || parsed.confidence > 1) {
+    errors.push('confidence 不是 0-1 之间的数字');
+  }
+
+  // 如果有 key_points，检查是否存在无引用结论
+  const kp = parsed.key_points as string[] | undefined;
+  if (kp && kp.length > 0) {
+    const noRef = kp.filter(p => !/\[C\d+\]/.test(p));
+    if (noRef.length > 0) {
+      errors.push(`存在 ${noRef.length} 条无引用结论: ${noRef[0].slice(0, 50)}...`);
+    }
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    data: {
+      answer: parsed.answer as string,
+      key_points: (parsed.key_points as string[]) || [],
+      uncertain_points: (parsed.uncertain_points as string[]) || [],
+      confidence: parsed.confidence as number,
+      citations: (parsed.citations as string[]) || [],
+    },
+    errors: [],
+  };
+}
+
+/**
+ * 结构化 AI 调用（带校验 + 自动重试）
+ *
+ * 流程：
+ * 1. 用指定温度发送请求
+ * 2. 校验返回的 JSON
+ * 3. 校验失败 → 自动触发一次"仅基于上下文重写"的二次请求
+ * 4. 二次仍失败 → 返回安全兜底
+ */
+export async function chatWithAIStructured(
+  config: AIConfig,
+  messages: AIMessage[],
+  chatMode: ChatMode,
+  onStream?: (text: string) => void
+): Promise<{ structured: StructuredAIResponse | null; raw: string; retried: boolean }> {
+  const temperature = CHAT_MODE_TEMPERATURES[chatMode];
+
+  // 第一次调用
+  const raw = await chatWithAI(config, messages, onStream, temperature);
+  const v1 = validateAIResponse(raw);
+  if (v1.ok && v1.data) {
+    return { structured: v1.data, raw, retried: false };
+  }
+
+  // 校验失败 → 二次请求（更严格，无流式）
+  const retryMessages: AIMessage[] = [
+    {
+      role: 'system',
+      content: `你之前的回答格式不符合要求。问题：${v1.errors.join('；')}。
+
+请严格按以下 JSON 格式重新输出（不要有 JSON 之外的任何文本）：
+{
+  "answer": "你的回答",
+  "key_points": ["结论1 [C1]", ...],
+  "uncertain_points": ["不确定的点"],
+  "confidence": 0.7,
+  "citations": ["[C1] 来源"]
+}
+
+仅基于之前对话中的上下文回答，不要添加新信息。如果不确定，降低 confidence 并在 uncertain_points 中说明。`,
+    },
+    ...messages.filter(m => m.role !== 'system'),
+    { role: 'assistant', content: raw },
+    { role: 'user', content: '请以正确的 JSON 格式重新输出你的回答。' },
+  ];
+
+  try {
+    const raw2 = await chatWithAI(config, retryMessages, undefined, 0.05);
+    const v2 = validateAIResponse(raw2);
+    if (v2.ok && v2.data) {
+      return { structured: v2.data, raw: raw2, retried: true };
+    }
+  } catch {
+    // 二次请求失败
+  }
+
+  // 兜底：将原始文本包装为安全回答
+  const fallback: StructuredAIResponse = {
+    answer: raw || '本次无法可靠回答，请补充题干或标准答案后重试。',
+    key_points: [],
+    uncertain_points: ['AI 回答格式校验失败，以下内容未经结构化验证，请谨慎参考'],
+    confidence: 0.3,
+    citations: [],
+  };
+
+  return { structured: fallback, raw, retried: true };
 }

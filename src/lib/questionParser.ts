@@ -1,11 +1,13 @@
 /**
- * 智能题目解析器
+ * 智能题目解析器 v2 — 严格模式
  * - 自动识别题目、选项、答案、解析
- * - 自动分类到对应模块和子类型
- * - 识别含图片的题目（图形推理、资料分析图表等）并特殊标记
+ * - 自动分类到对应模块和子类型；分类失败标记 unknown
+ * - 答案缺失/选项不足时标记 invalid，不默认填充
+ * - 难度估算标记 estimated = true
+ * - 识别含图片的题目并特殊标记
  */
 
-import { Module, SubType, Difficulty, Question, QuestionOption } from '@/types';
+import { Module, SubType, Difficulty, QuestionOption } from '@/types';
 
 // ==================== 模块关键词映射 ====================
 const MODULE_KEYWORDS: Record<Module, string[]> = {
@@ -90,15 +92,20 @@ const IMAGE_PATTERNS = [
 export interface ParsedQuestion {
   content: string;
   options: QuestionOption[];
-  answer: string;
+  answer: string;             // 'A'|'B'|'C'|'D' or 'invalid'
   explanation: string;
-  module: Module;
-  subType: SubType;
+  module: Module | 'unknown';
+  subType: SubType | 'unknown';
   difficulty: Difficulty;
+  difficultyEstimated: boolean; // true = 基于文本长度估算
   hasImage: boolean;
   imageType?: 'figure-reasoning' | 'chart-data' | 'illustration' | 'option-images';
   tags: string[];
   source?: string;
+  /** 是否通过校验（选项完整、答案有效、结构正常） */
+  valid: boolean;
+  /** 未通过校验的原因列表 */
+  invalidReasons: string[];
 }
 
 /**
@@ -134,8 +141,9 @@ export function detectImageContent(text: string): { hasImage: boolean; imageType
 
 /**
  * 智能推断题目所属模块和子类型
+ * 分类失败时返回 unknown，不回退到固定模块
  */
-export function classifyQuestion(content: string, contextHint?: string): { module: Module; subType: SubType } {
+export function classifyQuestion(content: string, contextHint?: string): { module: Module | 'unknown'; subType: SubType | 'unknown' } {
   const text = `${content} ${contextHint || ''}`.toLowerCase();
   
   // 优先匹配子类型关键词（更精确）
@@ -152,15 +160,14 @@ export function classifyQuestion(content: string, contextHint?: string): { modul
   for (const [module, keywords] of Object.entries(MODULE_KEYWORDS)) {
     for (const kw of keywords) {
       if (text.includes(kw.toLowerCase())) {
-        // 返回该模块的第一个子类型作为默认
         const firstSubtype = Object.values(SUBTYPE_KEYWORDS).find(v => v.module === module);
         if (firstSubtype) return firstSubtype;
       }
     }
   }
   
-  // 默认分类为常识判断
-  return { module: '常识判断', subType: '生活常识' };
+  // 分类失败 → unknown
+  return { module: 'unknown', subType: 'unknown' };
 }
 
 /**
@@ -176,12 +183,11 @@ export function estimateDifficulty(content: string, options: string[]): Difficul
 }
 
 /**
- * 解析纯文本为题目列表
- * 支持多种常见格式：
- *  1. xxx  /  1、xxx  /  第1题 xxx
- *  A. xxx  /  A、xxx  /  A xxx
- *  答案：A  /  【答案】A
- *  解析：xxx  /  【解析】xxx
+ * 解析纯文本为题目列表（严格模式）
+ * - 答案缺失标记 invalid
+ * - 选项不足标记 invalid
+ * - 分类失败标记 unknown
+ * - 难度带 estimated 标记
  */
 export function parseTextToQuestions(text: string, sourceLabel?: string): ParsedQuestion[] {
   const questions: ParsedQuestion[] = [];
@@ -195,29 +201,58 @@ export function parseTextToQuestions(text: string, sourceLabel?: string): Parsed
     
     try {
       const parsed = parseSingleQuestion(trimmed);
-      if (parsed) {
-        const classification = classifyQuestion(parsed.content, parsed.explanation);
-        const imageInfo = detectImageContent(parsed.content + ' ' + parsed.options.map(o => o.text).join(' '));
-        const difficulty = estimateDifficulty(parsed.content, parsed.options.map(o => o.text));
-        
-        const tags: string[] = [sourceLabel || '智能导入'];
-        if (imageInfo.hasImage) {
-          tags.push('含图片');
-          if (imageInfo.imageType === 'figure-reasoning') tags.push('图形推理');
-          if (imageInfo.imageType === 'chart-data') tags.push('图表数据');
-        }
-        
-        questions.push({
-          ...parsed,
-          module: classification.module,
-          subType: classification.subType,
-          difficulty,
-          hasImage: imageInfo.hasImage,
-          imageType: imageInfo.imageType,
-          tags,
-          source: sourceLabel,
-        });
+      if (!parsed) continue;
+
+      const classification = classifyQuestion(parsed.content, parsed.explanation);
+      const imageInfo = detectImageContent(parsed.content + ' ' + parsed.options.map(o => o.text).join(' '));
+      const difficulty = estimateDifficulty(parsed.content, parsed.options.map(o => o.text));
+      
+      // 构建校验原因列表
+      const invalidReasons: string[] = [];
+      
+      if (parsed.answer === 'invalid') {
+        invalidReasons.push('未检测到答案（原文中缺少"答案：X"标记）');
       }
+      if (parsed.options.length < 4) {
+        invalidReasons.push(`选项不完整（仅检测到${parsed.options.length}个选项，需要A/B/C/D四个）`);
+      }
+      if (parsed.options.length < 2) {
+        invalidReasons.push('选项严重不足（少于2个），结构可能错误');
+      }
+      if (parsed.content.length < 5) {
+        invalidReasons.push('题干过短，可能截取错误');
+      }
+      if (classification.module === 'unknown') {
+        invalidReasons.push('无法自动识别所属模块，需要人工指定');
+      }
+      
+      const valid = invalidReasons.length === 0;
+      
+      const tags: string[] = [sourceLabel || '智能导入'];
+      if (imageInfo.hasImage) {
+        tags.push('含图片');
+        if (imageInfo.imageType === 'figure-reasoning') tags.push('图形推理');
+        if (imageInfo.imageType === 'chart-data') tags.push('图表数据');
+      }
+      if (!valid) tags.push('待确认');
+      if (classification.module === 'unknown') tags.push('未分类');
+      
+      questions.push({
+        content: parsed.content,
+        options: parsed.options,
+        answer: parsed.answer,
+        explanation: parsed.explanation,
+        module: classification.module,
+        subType: classification.subType,
+        difficulty,
+        difficultyEstimated: true,
+        hasImage: imageInfo.hasImage,
+        imageType: imageInfo.imageType,
+        tags,
+        source: sourceLabel,
+        valid,
+        invalidReasons,
+      });
     } catch {
       // skip malformed questions
     }
@@ -227,7 +262,9 @@ export function parseTextToQuestions(text: string, sourceLabel?: string): Parsed
 }
 
 /**
- * 解析单道题目
+ * 解析单道题目（严格模式）
+ * - 解析不到答案时返回 answer='invalid'，不默认 A
+ * - 解析不到解析时返回 explanation='暂无解析'
  */
 function parseSingleQuestion(block: string): { content: string; options: QuestionOption[]; answer: string; explanation: string } | null {
   // 提取题干（从开头到第一个选项之前）
@@ -265,10 +302,11 @@ function parseSingleQuestion(block: string): { content: string; options: Questio
     }
   }
   
-  if (options.length < 2) return null;
+  // 选项不足2个认为结构有问题，仍然返回（标记 invalid）
+  if (options.length === 0) return null;
   
-  // 提取答案
-  let answer = '';
+  // 提取答案 — 严格模式：找不到就标记 invalid
+  let answer = 'invalid';
   const answerMatch = block.match(/(?:答案|【答案】|正确答案)[：:\s]*([A-D])/i);
   if (answerMatch) {
     answer = answerMatch[1].toUpperCase();
@@ -281,7 +319,7 @@ function parseSingleQuestion(block: string): { content: string; options: Questio
     explanation = explMatch[1].trim();
   }
   
-  return { content, options, answer: answer || 'A', explanation: explanation || '暂无解析' };
+  return { content, options, answer, explanation: explanation || '暂无解析' };
 }
 
 /**

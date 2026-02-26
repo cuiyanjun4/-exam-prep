@@ -101,6 +101,25 @@ export interface AIMessage {
   content: string;
 }
 
+// ==================== AI 结构化回答 ====================
+
+/** AI 结构化回答 — 用于降低幻觉、可追溯 */
+export interface StructuredAIResponse {
+  /** 回答正文（Markdown） */
+  answer: string;
+  /** 关键结论列表 */
+  key_points: string[];
+  /** 不确定/可能有误的点 */
+  uncertain_points: string[];
+  /** 置信度 0-1 */
+  confidence: number;
+  /** 引用上下文编号 [C1]... */
+  citations: string[];
+}
+
+/** AI Chat 模式 */
+export type ChatMode = 'explain' | 'review' | 'feynman' | 'knowledge' | 'similar' | 'daily' | 'free';
+
 // ==================== 学习方法 ====================
 
 export interface LearningMethod {

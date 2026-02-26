@@ -20,7 +20,7 @@ import {
 import Link from 'next/link';
 
 type ImportMethod = 'link' | 'file' | 'text';
-type ParseStage = 'idle' | 'connecting' | 'downloading' | 'extracting' | 'classifying' | 'images' | 'saving' | 'done';
+type ParseStage = 'idle' | 'connecting' | 'downloading' | 'extracting' | 'classifying' | 'images' | 'review' | 'saving' | 'done';
 
 const STAGE_INFO: Record<ParseStage, { pct: number; text: string; icon: string }> = {
   idle: { pct: 0, text: '准备就绪', icon: '⏳' },
@@ -29,7 +29,8 @@ const STAGE_INFO: Record<ParseStage, { pct: number; text: string; icon: string }
   extracting: { pct: 45, text: 'AI 正在识别题干、选项与答案...', icon: '🤖' },
   classifying: { pct: 65, text: '正在智能分类模块/子类型...', icon: '🏷️' },
   images: { pct: 80, text: '正在检测图片题目(图推/图表等)...', icon: '🖼️' },
-  saving: { pct: 92, text: '正在格式化并写入题库...', icon: '💾' },
+  review: { pct: 85, text: '请人工审核题目（确认后才入库）', icon: '👀' },
+  saving: { pct: 95, text: '正在格式化并写入题库...', icon: '💾' },
   done: { pct: 100, text: '录入完成！', icon: '✅' },
 };
 
@@ -40,6 +41,17 @@ interface ImportResult {
   modules: Record<string, number>;
   imageTypes: Record<string, number>;
 }
+
+const ALL_MODULES: Module[] = ['常识判断', '言语理解', '数量关系', '判断推理', '资料分析', '政治理论'];
+
+const MODULE_SUBTYPES: Record<Module, SubType[]> = {
+  '常识判断': ['政治', '法律', '经济', '科技', '人文', '地理', '生活常识'],
+  '言语理解': ['逻辑填空', '片段阅读', '语句排序', '语句衔接'],
+  '数量关系': ['数学运算', '数字推理'],
+  '判断推理': ['图形推理', '定义判断', '类比推理', '逻辑判断'],
+  '资料分析': ['文字资料', '表格资料', '图表资料', '综合资料'],
+  '政治理论': ['马克思主义基本原理', '毛泽东思想', '中国特色社会主义理论体系', '习近平新时代中国特色社会主义思想', '党史党建'],
+};
 
 export default function ImportPage() {
   const [method, setMethod] = useState<ImportMethod>('link');
@@ -55,9 +67,12 @@ export default function ImportPage() {
   const [extractionProgress, setExtractionProgress] = useState<string>('');
   const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
   const [pdfAnalysis, setPdfAnalysis] = useState<{ pages: number; images: number; quality: string } | null>(null);
+  // === 人工审核 ===
+  const [reviewQuestions, setReviewQuestions] = useState<ParsedQuestion[]>([]);
+  const [reviewSelections, setReviewSelections] = useState<Record<number, boolean>>({});  // index → selected
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isParsing = stage !== 'idle' && stage !== 'done';
+  const isParsing = stage !== 'idle' && stage !== 'done' && stage !== 'review';
 
   const handleLinkChange = (val: string) => {
     setLinkInput(val);
@@ -186,15 +201,18 @@ export default function ImportPage() {
               { key: 'C', text: '需要查看原始PDF中的图片' },
               { key: 'D', text: '需要查看原始PDF中的图片' },
             ],
-            answer: 'A',
+            answer: 'invalid',
             explanation: `此题来自PDF第${page.pageNum}页，包含${page.imageCount}张图片。图片内容需要查看原始PDF获取。`,
             module: '判断推理',
             subType: '图形推理',
             difficulty: 2,
+            difficultyEstimated: true,
             hasImage: true,
             imageType: 'figure-reasoning',
-            tags: [sourceLabel, '含图片', '需补充图片'],
+            tags: [sourceLabel, '含图片', '需补充图片', '待确认'],
             source: sourceLabel,
+            valid: false,
+            invalidReasons: ['PDF图片页提取，答案需人工补充', '选项需替换为实际内容'],
           };
           parsed.push(imgQ);
         }
@@ -230,20 +248,40 @@ export default function ImportPage() {
     setExtractionProgress('正在检测图片题目...');
     await wait(500);
 
-    // ====== 阶段6: 保存 ======
+    // ====== 阶段6: 进入人工审核 ======
+    setReviewQuestions(parsed);
+    // 默认选中所有 valid 的题目
+    const defaultSelections: Record<number, boolean> = {};
+    parsed.forEach((q, i) => { defaultSelections[i] = q.valid; });
+    setReviewSelections(defaultSelections);
+    setStage('review');
+    setExtractionProgress('请审核以下题目，确认后才会写入题库');
+    // 不再自动保存 — 等待用户在 review 页面确认
+  };
+
+  /** 人工审核后确认保存 */
+  const handleConfirmSave = async () => {
     setStage('saving');
     setExtractionProgress('正在写入题库...');
 
-    const questionsToSave: Question[] = parsed.map((p, i) => ({
+    // 仅保存：已选中 + 答案有效（非 invalid）+ module 非 unknown 的题
+    const selectedQuestions = reviewQuestions.filter((q, i) => {
+      if (!reviewSelections[i]) return false;
+      if (q.answer === 'invalid') return false;
+      if (q.module === 'unknown' || q.subType === 'unknown') return false;
+      return true;
+    });
+
+    const questionsToSave: Question[] = selectedQuestions.map((p, i) => ({
       id: `import-${Date.now()}-${i}`,
-      module: p.module,
-      subType: p.subType,
+      module: p.module as Module,
+      subType: p.subType as SubType,
       difficulty: p.difficulty,
       content: p.hasImage ? `🖼️ ${p.content}` : p.content,
       options: p.options,
       answer: p.answer,
       explanation: p.explanation,
-      tags: p.tags,
+      tags: p.tags.filter(t => t !== '待确认' && t !== '未分类'),
       source: p.source,
     }));
 
@@ -253,7 +291,7 @@ export default function ImportPage() {
     const modules: Record<string, number> = {};
     const imageTypes: Record<string, number> = {};
     let imageTotal = 0;
-    for (const q of parsed) {
+    for (const q of selectedQuestions) {
       modules[q.module] = (modules[q.module] || 0) + 1;
       if (q.hasImage) {
         imageTotal++;
@@ -266,15 +304,65 @@ export default function ImportPage() {
     }
 
     await wait(500);
-    setParsedPreview(parsed);
+    setParsedPreview(selectedQuestions);
     setResult({
-      total: parsed.length,
-      textTotal: parsed.length - imageTotal,
+      total: selectedQuestions.length,
+      textTotal: selectedQuestions.length - imageTotal,
       imageTotal,
       modules,
       imageTypes,
     });
     setStage('done');
+  };
+
+  /** 审核页面：修改单题的模块 */
+  const handleReviewModuleChange = (idx: number, mod: string) => {
+    setReviewQuestions(prev => {
+      const next = [...prev];
+      const q = { ...next[idx] };
+      q.module = mod as Module;
+      q.subType = MODULE_SUBTYPES[mod as Module]?.[0] ?? q.subType;
+      // 重新校验
+      q.invalidReasons = q.invalidReasons.filter(r => !r.includes('模块'));
+      if (q.answer !== 'invalid' && (q.module as string) !== 'unknown' && (q.subType as string) !== 'unknown' && q.options.length >= 4) {
+        q.valid = true;
+        q.invalidReasons = [];
+      }
+      next[idx] = q;
+      return next;
+    });
+  };
+
+  /** 审核页面：修改单题的子类型 */
+  const handleReviewSubTypeChange = (idx: number, st: string) => {
+    setReviewQuestions(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], subType: st as SubType };
+      return next;
+    });
+  };
+
+  /** 审核页面：修改单题的答案 */
+  const handleReviewAnswerChange = (idx: number, ans: string) => {
+    setReviewQuestions(prev => {
+      const next = [...prev];
+      const q = { ...next[idx], answer: ans };
+      // 重新校验
+      q.invalidReasons = q.invalidReasons.filter(r => !r.includes('答案'));
+      if (ans !== 'invalid' && q.module !== 'unknown' && q.subType !== 'unknown' && q.options.length >= 4) {
+        q.valid = true;
+        q.invalidReasons = [];
+      }
+      next[idx] = q;
+      return next;
+    });
+  };
+
+  /** 全选/全不选 */
+  const handleSelectAll = (selected: boolean) => {
+    const next: Record<number, boolean> = {};
+    reviewQuestions.forEach((_q, i) => { next[i] = selected; });
+    setReviewSelections(next);
   };
 
   const driveInfo = getCloudDriveInfo(detectedDrive);
@@ -566,6 +654,211 @@ B. 选项
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ====== 人工审核面板 ====== */}
+        {stage === 'review' && reviewQuestions.length > 0 && (
+          <div className="mt-6 space-y-4 animate-fade-in">
+            {/* 审核统计栏 */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-2 border-amber-200 dark:border-amber-700/50 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-extrabold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                  <span className="text-2xl">👀</span> 人工审核确认
+                </h3>
+                <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">确认后才会写入题库</span>
+              </div>
+              <div className="flex gap-6">
+                <div className="text-center">
+                  <p className="text-3xl font-black text-amber-700 dark:text-amber-400">{reviewQuestions.length}</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500">总识别</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-3xl font-black text-green-600">{reviewQuestions.filter(q => q.valid).length}</p>
+                  <p className="text-xs text-green-500">有效题</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-3xl font-black text-red-500">{reviewQuestions.filter(q => !q.valid).length}</p>
+                  <p className="text-xs text-red-400">待修正</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-3xl font-black text-blue-600">{Object.values(reviewSelections).filter(Boolean).length}</p>
+                  <p className="text-xs text-blue-500">已选中</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 批量操作栏 */}
+            <div className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+              <div className="flex gap-2">
+                <button onClick={() => handleSelectAll(true)} className="px-3 py-1.5 text-xs font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 transition-all">
+                  ✅ 全选
+                </button>
+                <button onClick={() => handleSelectAll(false)} className="px-3 py-1.5 text-xs font-bold bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 transition-all">
+                  取消全选
+                </button>
+                <button
+                  onClick={() => {
+                    const next: Record<number, boolean> = {};
+                    reviewQuestions.forEach((q, i) => { next[i] = q.valid; });
+                    setReviewSelections(next);
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 transition-all"
+                >
+                  仅选有效题
+                </button>
+              </div>
+              <span className="text-xs text-gray-500">已选 {Object.values(reviewSelections).filter(Boolean).length} / {reviewQuestions.length} 题</span>
+            </div>
+
+            {/* 题目列表 */}
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+              {reviewQuestions.map((q, idx) => (
+                <div
+                  key={idx}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    reviewSelections[idx]
+                      ? q.valid
+                        ? 'border-green-200 dark:border-green-700/50 bg-green-50/50 dark:bg-green-900/10'
+                        : 'border-amber-200 dark:border-amber-700/50 bg-amber-50/50 dark:bg-amber-900/10'
+                      : 'border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 opacity-60'
+                  }`}
+                >
+                  {/* 顶部行 */}
+                  <div className="flex items-center gap-3 mb-3 flex-wrap">
+                    <input
+                      type="checkbox"
+                      checked={!!reviewSelections[idx]}
+                      onChange={(e) => setReviewSelections(prev => ({ ...prev, [idx]: e.target.checked }))}
+                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-xs font-bold text-gray-400 dark:text-gray-500">#{idx + 1}</span>
+                    {q.valid ? (
+                      <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-xs rounded-full font-bold">✅ 有效</span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-xs rounded-full font-bold">❌ 待修正</span>
+                    )}
+                    {q.hasImage && (
+                      <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs rounded-full font-bold">🖼️ 含图片</span>
+                    )}
+                    {q.difficultyEstimated && (
+                      <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 text-xs rounded">难度估算</span>
+                    )}
+                  </div>
+
+                  {/* 题干预览 */}
+                  <p className="text-sm text-gray-800 dark:text-gray-200 mb-3 line-clamp-2 leading-relaxed">{q.content}</p>
+
+                  {/* 无效原因 */}
+                  {q.invalidReasons.length > 0 && (
+                    <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800/30">
+                      <p className="text-xs font-bold text-red-600 dark:text-red-400 mb-1">⚠️ 问题：</p>
+                      <ul className="space-y-0.5">
+                        {q.invalidReasons.map((r, ri) => (
+                          <li key={ri} className="text-xs text-red-500 dark:text-red-400 flex items-start gap-1">
+                            <span>•</span><span>{r}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 编辑区 */}
+                  <div className="flex flex-wrap gap-3 items-center">
+                    {/* 模块 */}
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">模块:</label>
+                      <select
+                        value={q.module}
+                        onChange={(e) => handleReviewModuleChange(idx, e.target.value)}
+                        className={`text-xs px-2 py-1 rounded-lg border font-bold ${
+                          q.module === 'unknown'
+                            ? 'bg-red-50 border-red-300 text-red-600 dark:bg-red-900/30 dark:border-red-700 dark:text-red-400'
+                            : 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300'
+                        }`}
+                      >
+                        {q.module === 'unknown' && <option value="unknown">❓ 未分类</option>}
+                        {ALL_MODULES.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+
+                    {/* 子类型 */}
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">子类型:</label>
+                      <select
+                        value={q.subType as string}
+                        onChange={(e) => handleReviewSubTypeChange(idx, e.target.value)}
+                        className={`text-xs px-2 py-1 rounded-lg border font-bold ${
+                          q.subType === 'unknown'
+                            ? 'bg-red-50 border-red-300 text-red-600 dark:bg-red-900/30 dark:border-red-700 dark:text-red-400'
+                            : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-slate-700 dark:border-slate-600 dark:text-gray-300'
+                        }`}
+                      >
+                        {q.subType === 'unknown' && <option value="unknown">❓ 未分类</option>}
+                        {(q.module !== 'unknown' ? MODULE_SUBTYPES[q.module as Module] || [] : []).map(st => (
+                          <option key={st} value={st}>{st}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 答案 */}
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">答案:</label>
+                      <div className="flex gap-1">
+                        {['A', 'B', 'C', 'D'].map(opt => (
+                          <button
+                            key={opt}
+                            onClick={() => handleReviewAnswerChange(idx, opt)}
+                            className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                              q.answer === opt
+                                ? 'bg-green-500 text-white shadow-sm ring-2 ring-green-300'
+                                : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                        {q.answer === 'invalid' && (
+                          <span className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded-lg font-bold">未设置</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 难度 */}
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">难度:</label>
+                      <span className="text-xs">{'⭐'.repeat(q.difficulty)}</span>
+                    </div>
+                  </div>
+
+                  {/* 选项预览 */}
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    {q.options.map(o => (
+                      <span key={o.key} className={q.answer === o.key ? 'text-green-600 font-bold' : ''}>
+                        {o.key}. {o.text.length > 30 ? o.text.slice(0, 30) + '...' : o.text}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 确认入库 */}
+            <div className="flex gap-3 sticky bottom-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-2xl border-t border-gray-100 dark:border-slate-700 shadow-lg">
+              <button
+                onClick={handleConfirmSave}
+                disabled={Object.values(reviewSelections).filter(Boolean).length === 0}
+                className="flex-1 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-extrabold text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ✅ 确认入库 ({Object.values(reviewSelections).filter(Boolean).length} 题)
+              </button>
+              <button
+                onClick={() => { setStage('idle'); setReviewQuestions([]); setReviewSelections({}); }}
+                className="px-6 py-4 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-slate-600 transition-all"
+              >
+                放弃
+              </button>
             </div>
           </div>
         )}
