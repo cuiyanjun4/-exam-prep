@@ -46,20 +46,36 @@ function generateId(): string {
 
 const AVATARS = ['👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓', '🧑‍💻', '👨‍🏫', '👩‍🏫', '🦊', '🐱', '🐼', '🦁', '🐯'];
 
-// ==================== 初始化管理员 ====================
+// ==================== UID 生成系统 ====================
+
+function generateUID(): string {
+  const users = getAllUsers();
+  const maxUID = users.reduce((max, u) => {
+    const num = parseInt(u.uid?.replace('#', '') || '0');
+    return num > max ? num : max;
+  }, 100000);
+  return `#${maxUID + 1}`;
+}
+
+// ==================== 初始化管理员 + VVVVIP ====================
 
 export function ensureAdminExists(): void {
   const users = getAllUsers();
+  let changed = false;
+
+  // 确保管理员存在
   const hasAdmin = users.some(u => u.role === 'admin');
   if (!hasAdmin) {
     const now = new Date().toISOString();
     const adminUser: User = {
       id: 'admin-001',
+      uid: '#100001',
       username: DEFAULT_ADMIN.username,
       nickname: DEFAULT_ADMIN.nickname,
       avatar: '🛡️',
       passwordHash: simpleHash(DEFAULT_ADMIN.password),
       role: 'admin',
+      vipLevel: 'svip',
       createdAt: now,
       lastLoginAt: now,
       bio: '系统管理员',
@@ -67,8 +83,42 @@ export function ensureAdminExists(): void {
       targetExamDate: '',
     };
     users.push(adminUser);
-    setItem(KEYS.USERS, users);
+    changed = true;
   }
+
+  // 确保 VVVVIP 创世神账号存在
+  const hasCreator = users.some(u => u.username === 'cuiyanjun');
+  if (!hasCreator) {
+    const now = new Date().toISOString();
+    const creatorUser: User = {
+      id: 'creator-001',
+      uid: '#000001',
+      username: 'cuiyanjun',
+      nickname: '至尊无敌创世神',
+      avatar: '🌌',
+      passwordHash: simpleHash('cuiyanjun666'),
+      role: 'admin',
+      vipLevel: 'vvvvip',
+      specialTitle: 'creator',
+      createdAt: now,
+      lastLoginAt: now,
+      bio: '✨ 至尊无敌创世神 · 万物之源 · 系统创建者',
+      targetScore: 200,
+      targetExamDate: '',
+    };
+    users.push(creatorUser);
+    changed = true;
+  }
+
+  // 给已有用户补上 uid
+  users.forEach((u, i) => {
+    if (!u.uid) {
+      u.uid = `#${100001 + i}`;
+      changed = true;
+    }
+  });
+
+  if (changed) setItem(KEYS.USERS, users);
 }
 
 // ==================== 用户管理 ====================
@@ -92,11 +142,13 @@ export function register(username: string, password: string, nickname: string, r
   const now = new Date().toISOString();
   const user: User = {
     id: generateId(),
+    uid: generateUID(),
     username,
     nickname,
     avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)],
     passwordHash: simpleHash(password),
     role,
+    vipLevel: 'normal',
     createdAt: now,
     lastLoginAt: now,
     bio: '',

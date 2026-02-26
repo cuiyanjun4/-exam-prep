@@ -72,7 +72,18 @@ export const TITLES: Title[] = [
   { id: 'master',      name: '考公高手',   icon: '👑', minLevel: 18, description: '出类拔萃' },
   { id: 'grandmaster', name: '行测宗师',   icon: '🏆', minLevel: 25, description: '登峰造极' },
   { id: 'legend',      name: '上岸传奇',   icon: '🐉', minLevel: 35, description: '万中无一' },
+  { id: 'mythic',      name: '行测神话',   icon: '⚡', minLevel: 50, description: '超越极限' },
+  { id: 'immortal',    name: '不朽考神',   icon: '🔱', minLevel: 70, description: '永恒不朽' },
+  { id: 'supreme',     name: '至高无上',   icon: '💎', minLevel: 99, description: '独步天下' },
 ];
+
+// 特殊称号（不受等级限制，由系统赋予）
+export const SPECIAL_TITLES: Record<string, { name: string; icon: string; color: string; description: string }> = {
+  'creator': { name: '至尊无敌创世神', icon: '🌌', color: 'from-amber-400 via-red-500 to-purple-600', description: '创世之力，万物之源' },
+  'vvvvip': { name: 'VVVVIP', icon: '💠', color: 'from-yellow-400 via-amber-500 to-orange-600', description: '至尊贵宾' },
+  'pioneer': { name: '开荒先驱', icon: '🚀', color: 'from-blue-400 via-cyan-500 to-teal-600', description: '最早的探索者' },
+  'contributor': { name: '杰出贡献者', icon: '🎖️', color: 'from-green-400 via-emerald-500 to-teal-600', description: '为平台做出杰出贡献' },
+};
 
 // ==================== 成就系统 ====================
 

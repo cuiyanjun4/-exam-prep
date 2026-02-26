@@ -142,11 +142,14 @@ export type UserRole = 'user' | 'admin';
 
 export interface User {
   id: string;
+  uid: string; // 个人唯一展示ID，如 #100001
   username: string;
   nickname: string;
   avatar: string; // emoji avatar
   passwordHash: string;
   role: UserRole;
+  vipLevel?: 'normal' | 'vip' | 'svip' | 'vvvvip'; // VIP等级
+  specialTitle?: string; // 特殊称号ID（不受等级限制）
   createdAt: string;
   lastLoginAt: string;
   bio?: string;

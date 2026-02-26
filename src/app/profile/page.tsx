@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getAuthState, getCurrentUser, logout, changePassword, updateProfile, AVATARS } from '@/lib/auth';
 import { getProgress, getDailyStats, getRecords, getFavorites } from '@/lib/storage';
-import { getGameProfile, getLevelProgress, xpForLevel, TITLES, ACHIEVEMENTS } from '@/lib/gamification';
+import { getGameProfile, getLevelProgress, xpForLevel, TITLES, ACHIEVEMENTS, SPECIAL_TITLES } from '@/lib/gamification';
 import { User, UserProgress, Module } from '@/types';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -86,15 +86,38 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Profile Header */}
-      <div className="bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-6 text-white">
+      <div className={`rounded-2xl p-6 text-white ${
+        user.vipLevel === 'vvvvip'
+          ? 'bg-gradient-to-br from-amber-500 via-red-600 to-purple-700'
+          : user.vipLevel === 'svip'
+            ? 'bg-gradient-to-br from-yellow-500 via-amber-600 to-orange-700'
+            : 'bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600'
+      }`}>
         <div className="flex items-center gap-4">
-          <span className="text-5xl">{user.avatar}</span>
+          <div className="relative">
+            <span className="text-5xl">{user.avatar}</span>
+            {user.vipLevel === 'vvvvip' && (
+              <span className="absolute -top-1 -right-1 text-xs bg-gradient-to-r from-yellow-300 to-amber-400 text-amber-900 font-black px-1.5 py-0.5 rounded-full shadow-lg animate-pulse">
+                VVVVIP
+              </span>
+            )}
+            {user.vipLevel === 'svip' && (
+              <span className="absolute -top-1 -right-1 text-xs bg-yellow-400 text-amber-900 font-bold px-1.5 py-0.5 rounded-full">SVIP</span>
+            )}
+          </div>
           <div className="flex-1">
-            <h1 className="text-xl font-bold">{user.nickname}</h1>
-            <p className="text-sm opacity-80">@{user.username} · {user.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold">{user.nickname}</h1>
+              {user.specialTitle && SPECIAL_TITLES[user.specialTitle] && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold bg-gradient-to-r ${SPECIAL_TITLES[user.specialTitle].color} text-white shadow-lg`}>
+                  {SPECIAL_TITLES[user.specialTitle].icon} {SPECIAL_TITLES[user.specialTitle].name}
+                </span>
+              )}
+            </div>
+            <p className="text-sm opacity-80">@{user.username} · {user.uid || '#?'} · {user.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}</p>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-lg">{gameProfile.titleIcon}</span>
-              <span className="text-sm font-medium">{gameProfile.title}</span>
+              <span className="text-sm font-medium">{user.specialTitle ? (SPECIAL_TITLES[user.specialTitle]?.name || gameProfile.title) : gameProfile.title}</span>
               <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs">Lv.{gameProfile.level}</span>
             </div>
           </div>
@@ -358,11 +381,42 @@ function AccountSettingsSection({ user, onProfileUpdate }: { user: User; onProfi
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
               <div>
+                <p className="text-sm font-medium text-slate-700">个人ID</p>
+                <p className="text-xs text-slate-400">唯一身份标识</p>
+              </div>
+              <span className="text-sm text-blue-600 font-mono font-bold bg-blue-50 px-3 py-1 rounded border border-blue-200">{user.uid || '#?'}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
                 <p className="text-sm font-medium text-slate-700">用户名</p>
                 <p className="text-xs text-slate-400">注册后不可修改</p>
               </div>
               <span className="text-sm text-slate-600 font-mono bg-white px-3 py-1 rounded border">@{user.username}</span>
             </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">VIP等级</p>
+                <p className="text-xs text-slate-400">{user.vipLevel === 'vvvvip' ? '至尊特权' : user.vipLevel === 'svip' ? '超级VIP' : '普通用户'}</p>
+              </div>
+              <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                user.vipLevel === 'vvvvip' ? 'bg-gradient-to-r from-amber-400 to-red-500 text-white' :
+                user.vipLevel === 'svip' ? 'bg-yellow-400 text-amber-900' :
+                'bg-slate-200 text-slate-600'
+              }`}>
+                {user.vipLevel === 'vvvvip' ? '💠 VVVVIP' : user.vipLevel === 'svip' ? '⭐ SVIP' : user.vipLevel === 'vip' ? 'VIP' : '普通'}
+              </span>
+            </div>
+            {user.specialTitle && SPECIAL_TITLES[user.specialTitle] && (
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">特殊称号</p>
+                  <p className="text-xs text-slate-400">{SPECIAL_TITLES[user.specialTitle].description}</p>
+                </div>
+                <span className={`text-xs px-3 py-1 rounded-full font-bold bg-gradient-to-r ${SPECIAL_TITLES[user.specialTitle].color} text-white`}>
+                  {SPECIAL_TITLES[user.specialTitle].icon} {SPECIAL_TITLES[user.specialTitle].name}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-slate-700">账户角色</p>

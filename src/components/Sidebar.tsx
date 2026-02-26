@@ -116,11 +116,16 @@ export default function Sidebar() {
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
             {currentUser ? (
               <Link href="/profile" className="flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg p-1 -m-1 transition-colors">
-                <span className="text-2xl">{currentUser.avatar}</span>
+                <div className="relative">
+                  <span className="text-2xl">{currentUser.avatar}</span>
+                  {currentUser.vipLevel === 'vvvvip' && (
+                    <span className="absolute -top-1 -right-2 text-[8px] bg-gradient-to-r from-amber-400 to-red-500 text-white font-black px-1 rounded-full">V4</span>
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{currentUser.nickname}</p>
                   <p className="text-xs text-slate-400">
-                    {currentUser.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}
+                    {currentUser.uid || ''} · {currentUser.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}
                   </p>
                 </div>
               </Link>
