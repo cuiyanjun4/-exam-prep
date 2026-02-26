@@ -42,6 +42,7 @@ export const PROVIDER_MODELS: Record<AIProvider, { label: string; value: string;
     { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022', tag: '快速' },
   ],
   gemini: [
+    { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro', tag: '最新' },
     { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro-preview-06-05', tag: '最强' },
     { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash-preview-05-20', tag: '均衡' },
     { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash', tag: '快速' },
