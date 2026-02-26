@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getAuthState, getCurrentUser, logout } from '@/lib/auth';
+import { getAuthState, getCurrentUser, logout, changePassword, updateProfile, AVATARS } from '@/lib/auth';
 import { getProgress, getDailyStats, getRecords, getFavorites } from '@/lib/storage';
 import { getGameProfile, getLevelProgress, xpForLevel, TITLES, ACHIEVEMENTS } from '@/lib/gamification';
 import { User, UserProgress, Module } from '@/types';
@@ -209,11 +209,192 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Account Settings */}
+      <AccountSettingsSection user={user} onProfileUpdate={(u) => setUser(u)} />
+
       {/* Account actions */}
       <div className="flex gap-3 justify-center pb-8">
         <button onClick={handleLogout} className="px-6 py-2.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100">
           🚪 退出登录
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ==================== 账户设置组件 ====================
+function AccountSettingsSection({ user, onProfileUpdate }: { user: User; onProfileUpdate: (u: User) => void }) {
+  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'security'>('profile');
+  const [nickname, setNickname] = useState(user.nickname);
+  const [bio, setBio] = useState(user.bio || '');
+  const [avatar, setAvatar] = useState(user.avatar);
+  const [targetScore, setTargetScore] = useState(user.targetScore || 70);
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleProfileSave = () => {
+    const result = updateProfile({ nickname, bio, avatar, targetScore });
+    if (result) {
+      setMsg({ type: 'success', text: '✅ 个人信息已更新' });
+      const auth = getAuthState();
+      if (auth.currentUser) onProfileUpdate(auth.currentUser);
+    } else {
+      setMsg({ type: 'error', text: '❌ 更新失败' });
+    }
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const handlePasswordChange = () => {
+    if (newPwd !== confirmPwd) {
+      setMsg({ type: 'error', text: '❌ 两次输入的新密码不一致' });
+      setTimeout(() => setMsg(null), 3000);
+      return;
+    }
+    const result = changePassword(oldPwd, newPwd);
+    setMsg({ type: result.success ? 'success' : 'error', text: result.success ? '✅ ' + result.message : '❌ ' + result.message });
+    if (result.success) { setOldPwd(''); setNewPwd(''); setConfirmPwd(''); }
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const tabs = [
+    { key: 'profile' as const, label: '👤 个人信息', icon: '👤' },
+    { key: 'password' as const, label: '🔑 修改密码', icon: '🔑' },
+    { key: 'security' as const, label: '🛡️ 账户安全', icon: '🛡️' },
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveTab(tab.key); setMsg(null); }}
+            className={`flex-1 py-3 text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-5">
+        {msg && (
+          <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${msg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {msg.text}
+          </div>
+        )}
+
+        {activeTab === 'profile' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">头像</label>
+              <div className="flex flex-wrap gap-2">
+                {AVATARS.map(a => (
+                  <button
+                    key={a}
+                    onClick={() => setAvatar(a)}
+                    className={`text-2xl p-2 rounded-lg transition-all ${avatar === a ? 'bg-blue-100 ring-2 ring-blue-500 scale-110' : 'hover:bg-slate-100'}`}
+                  >
+                    {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">昵称</label>
+                <input type="text" value={nickname} onChange={e => setNickname(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">目标分数</label>
+                <input type="number" value={targetScore} onChange={e => setTargetScore(Number(e.target.value))} min={0} max={200}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">个人简介</label>
+              <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="写点什么介绍自己..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 resize-none" />
+            </div>
+            <button onClick={handleProfileSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              保存修改
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'password' && (
+          <div className="space-y-4 max-w-sm">
+            <p className="text-sm text-slate-500">修改密码后需要重新登录</p>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">当前密码</label>
+              <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder="输入当前密码"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300" />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">新密码</label>
+              <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="至少4个字符"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300" />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">确认新密码</label>
+              <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} placeholder="再次输入新密码"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300" />
+            </div>
+            <button onClick={handlePasswordChange} disabled={!oldPwd || !newPwd || !confirmPwd}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              确认修改密码
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'security' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">用户名</p>
+                <p className="text-xs text-slate-400">注册后不可修改</p>
+              </div>
+              <span className="text-sm text-slate-600 font-mono bg-white px-3 py-1 rounded border">@{user.username}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">账户角色</p>
+                <p className="text-xs text-slate-400">{user.role === 'admin' ? '拥有管理员权限' : '普通学员权限'}</p>
+              </div>
+              <span className={`text-xs px-3 py-1 rounded-full font-medium ${user.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                {user.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">注册时间</p>
+                <p className="text-xs text-slate-400">账户创建日期</p>
+              </div>
+              <span className="text-sm text-slate-600">{new Date(user.createdAt).toLocaleDateString('zh-CN')}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">最后登录</p>
+                <p className="text-xs text-slate-400">上次活跃时间</p>
+              </div>
+              <span className="text-sm text-slate-600">{new Date(user.lastLoginAt).toLocaleString('zh-CN')}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-slate-700">AI 配置</p>
+                <p className="text-xs text-slate-400">{user.aiConfig ? '已配置个人 API Key' : '未配置'}</p>
+              </div>
+              <Link href="/settings" className="text-xs text-blue-500 hover:underline">前往设置 →</Link>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

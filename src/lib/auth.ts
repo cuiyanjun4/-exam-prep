@@ -234,6 +234,21 @@ export function deleteUser(userId: string): { success: boolean; message: string 
 
 export { AVATARS };
 
+// ==================== 密码重置 ====================
+
+/** 通过用户名重置密码（用于忘记密码功能） */
+export function resetPasswordByUsername(username: string, newPassword: string): { success: boolean; message: string } {
+  if (newPassword.length < 4) return { success: false, message: '新密码至少4个字符' };
+
+  const users = getAllUsers();
+  const idx = users.findIndex(u => u.username === username);
+  if (idx < 0) return { success: false, message: '用户不存在' };
+
+  users[idx].passwordHash = simpleHash(newPassword);
+  setItem(KEYS.USERS, users);
+  return { success: true, message: '密码重置成功' };
+}
+
 // ==================== 用户 AI 配置 ====================
 
 /** 保存当前用户的 AI 配置 */

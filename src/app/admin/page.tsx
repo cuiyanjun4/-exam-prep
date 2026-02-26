@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Module, Question, Difficulty } from '@/types';
 import { getModuleQuestionCounts, getAllQuestions } from '@/data';
-import { isAdmin, getAuthState, logout, ensureAdminExists, getCurrentUser } from '@/lib/auth';
+import { isAdmin, getAuthState, logout, ensureAdminExists, getCurrentUser, getAllUsers, setUserRole, deleteUser, resetPasswordByUsername } from '@/lib/auth';
 import { chatWithAI, PROVIDER_LABELS } from '@/lib/ai';
 import { getSettings } from '@/lib/storage';
 import { AIConfig } from '@/types';
@@ -19,7 +19,7 @@ const MODULE_FILES: Record<string, string> = {
   '资料分析': 'ziliao.json',
 };
 
-type Tab = 'upload' | 'pdf' | 'list' | 'stats';
+type Tab = 'upload' | 'pdf' | 'list' | 'stats' | 'users';
 
 // ==================== PDF文本解析工具 ====================
 
@@ -195,6 +195,7 @@ export default function AdminPage() {
     { key: 'pdf', label: 'PDF导入', icon: '📄' },
     { key: 'list', label: '题库浏览', icon: '📋' },
     { key: 'stats', label: '题库统计', icon: '📊' },
+    { key: 'users', label: '用户管理', icon: '👥' },
   ];
 
   function handleParse() {
@@ -788,6 +789,155 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* Users Tab */}
+      {activeTab === 'users' && <AdminUsersTab />}
+    </div>
+  );
+}
+
+// ==================== 用户管理组件 ====================
+function AdminUsersTab() {
+  const [users, setUsers] = useState(getAllUsers());
+  const [resetPwd, setResetPwd] = useState<{ userId: string; password: string } | null>(null);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const refresh = () => setUsers(getAllUsers());
+
+  const handleRoleToggle = (userId: string, currentRole: string) => {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    const result = setUserRole(userId, newRole as 'user' | 'admin');
+    setMsg({ type: result.success ? 'success' : 'error', text: result.message });
+    refresh();
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const handleDelete = (userId: string, nickname: string) => {
+    if (!confirm(`确定删除用户 "${nickname}" 吗？此操作不可撤销。`)) return;
+    const result = deleteUser(userId);
+    setMsg({ type: result.success ? 'success' : 'error', text: result.message });
+    refresh();
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const handleResetPassword = (username: string) => {
+    if (!resetPwd?.password || resetPwd.password.length < 4) {
+      setMsg({ type: 'error', text: '新密码至少4个字符' });
+      setTimeout(() => setMsg(null), 3000);
+      return;
+    }
+    const result = resetPasswordByUsername(username, resetPwd.password);
+    setMsg({ type: result.success ? 'success' : 'error', text: result.success ? `✅ 已重置 ${username} 的密码` : result.message });
+    setResetPwd(null);
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  return (
+    <div className="space-y-5">
+      {msg && (
+        <div className={`px-4 py-2.5 rounded-lg text-sm ${msg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Users stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border p-4">
+          <p className="text-sm text-slate-500">总用户数</p>
+          <p className="text-3xl font-bold text-blue-600 mt-1">{users.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <p className="text-sm text-slate-500">管理员</p>
+          <p className="text-3xl font-bold text-amber-600 mt-1">{users.filter(u => u.role === 'admin').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <p className="text-sm text-slate-500">普通用户</p>
+          <p className="text-3xl font-bold text-green-600 mt-1">{users.filter(u => u.role === 'user').length}</p>
+        </div>
+        <div className="bg-white rounded-xl border p-4">
+          <p className="text-sm text-slate-500">配置了AI</p>
+          <p className="text-3xl font-bold text-purple-600 mt-1">{users.filter(u => u.aiConfig?.apiKey).length}</p>
+        </div>
+      </div>
+
+      {/* Users list */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="p-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800">👥 用户列表</h2>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {users.map(user => (
+            <div key={user.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <span className="text-2xl flex-shrink-0">{user.avatar}</span>
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-700 truncate">{user.nickname}</p>
+                  <p className="text-xs text-slate-400">@{user.username} · 注册于 {new Date(user.createdAt).toLocaleDateString('zh-CN')}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                  user.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {user.role === 'admin' ? '🛡️ 管理员' : '📝 学员'}
+                </span>
+                {user.aiConfig?.apiKey && (
+                  <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">🔑 AI</span>
+                )}
+
+                {/* Actions */}
+                {user.id !== 'admin-001' && (
+                  <>
+                    <button
+                      onClick={() => handleRoleToggle(user.id, user.role)}
+                      className="text-xs px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                    >
+                      {user.role === 'admin' ? '降为学员' : '升为管理员'}
+                    </button>
+                    {resetPwd?.userId === user.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={resetPwd.password}
+                          onChange={e => setResetPwd({ ...resetPwd, password: e.target.value })}
+                          placeholder="新密码"
+                          className="w-24 px-2 py-1 border rounded text-xs"
+                        />
+                        <button onClick={() => handleResetPassword(user.username)} className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">确认</button>
+                        <button onClick={() => setResetPwd(null)} className="text-xs px-2 py-1 bg-slate-200 rounded hover:bg-slate-300">取消</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setResetPwd({ userId: user.id, password: '' })}
+                        className="text-xs px-2.5 py-1 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors"
+                      >
+                        重置密码
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(user.id, user.nickname)}
+                      className="text-xs px-2.5 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Permission info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
+        <p className="font-semibold mb-2">🔐 权限说明</p>
+        <ul className="space-y-1 list-disc ml-4">
+          <li><strong>管理员</strong>：可管理题库、上传PDF、管理用户、重置密码、修改角色</li>
+          <li><strong>学员</strong>：可刷题、查看数据、使用AI辅导、管理个人设置</li>
+          <li>每个用户独立管理自己的 AI API Key，互不影响</li>
+          <li>默认管理员账户 (admin) 不可被删除或降级</li>
+        </ul>
+      </div>
     </div>
   );
 }
