@@ -175,19 +175,26 @@ export default function SettingsPage() {
           </select>
         </div>
 
-        {/* Custom API URL */}
-        {settings.aiConfig.provider === 'custom' && (
-          <div>
-            <label className="block text-sm text-slate-600 mb-1">自定义 API 地址</label>
-            <input
-              type="text"
-              value={settings.aiConfig.apiUrl || ''}
-              onChange={e => updateAI('apiUrl', e.target.value)}
-              placeholder="https://your-api.com/v1/chat/completions"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
-            />
-          </div>
-        )}
+        {/* API Proxy URL - 所有服务商都可配置代理 */}
+        <div>
+          <label className="block text-sm text-slate-600 mb-1">
+            {settings.aiConfig.provider === 'custom' ? '自定义 API 地址' : '🌐 API 代理地址（可选）'}
+          </label>
+          <input
+            type="text"
+            value={settings.aiConfig.apiUrl || ''}
+            onChange={e => updateAI('apiUrl', e.target.value)}
+            placeholder={
+              settings.aiConfig.provider === 'custom'
+                ? 'https://your-api.com/v1/chat/completions'
+                : '留空使用官方地址，或输入第三方代理如 https://new.lemonapi.site/v1'
+            }
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+          />
+          {settings.aiConfig.provider !== 'custom' && (
+            <p className="text-xs text-slate-400 mt-1">💡 支持 OpenAI 兼容格式的第三方代理，留空则使用官方API地址</p>
+          )}
+        </div>
       </div>
 
       {/* Practice Settings */}

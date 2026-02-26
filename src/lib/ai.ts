@@ -42,8 +42,10 @@ export const PROVIDER_MODELS: Record<AIProvider, { label: string; value: string;
     { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022', tag: '快速' },
   ],
   gemini: [
-    { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro', tag: '最新' },
-    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro-preview-06-05', tag: '最强' },
+    { label: 'Gemini 3.1 Pro Preview', value: 'gemini-3.1-pro-preview', tag: '最新' },
+    { label: 'Gemini 3 Pro Preview', value: 'gemini-3-pro-preview', tag: '旗舰' },
+    { label: 'Gemini 3 Flash (搜索)', value: 'gemini-3-flash-preview-search', tag: '搜索' },
+    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro', tag: '最强' },
     { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash-preview-05-20', tag: '均衡' },
     { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash', tag: '快速' },
     { label: 'Gemini 2.0 Flash Lite', value: 'gemini-2.0-flash-lite', tag: '轻量' },
@@ -112,9 +114,12 @@ export async function chatWithAI(
   messages: AIMessage[],
   onStream?: (text: string) => void
 ): Promise<string> {
-  const endpoint = config.provider === 'custom' 
-    ? config.apiUrl! 
-    : API_ENDPOINTS[config.provider];
+  // 优先使用用户自定义的代理地址，否则使用官方地址
+  const endpoint = config.apiUrl 
+    ? config.apiUrl.replace(/\/+$/, '') + '/chat/completions'
+    : config.provider === 'custom' 
+      ? config.apiUrl!
+      : API_ENDPOINTS[config.provider];
 
   if (!config.apiKey) {
     throw new Error('请先在设置中配置AI API Key');
@@ -125,8 +130,40 @@ export async function chatWithAI(
     return await callAnthropic(config, messages, onStream);
   }
 
-  // Google Gemini 使用不同的请求格式
+  // Google Gemini: 如果设置了代理地址，使用 OpenAI 兼容格式；否则使用原生 API
   if (config.provider === 'gemini') {
+    if (config.apiUrl) {
+      // 第三方代理 (OpenAI 兼容格式)
+      const proxyEndpoint = config.apiUrl.replace(/\/+$/, '') + '/chat/completions';
+      try {
+        const response = await fetch(proxyEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: config.model,
+            messages,
+            stream: !!onStream,
+            temperature: 0.7,
+            max_tokens: 4096,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.text();
+          throw new Error(`Gemini代理接口错误 (${response.status}): ${err}`);
+        }
+        if (onStream && response.body) {
+          return await handleStream(response.body, onStream);
+        }
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content || '无响应内容';
+      } catch (error: unknown) {
+        if (error instanceof Error) throw new Error(`Gemini代理调用失败: ${error.message}`);
+        throw new Error('Gemini代理调用失败: 未知错误');
+      }
+    }
     return await callGemini(config, messages, onStream);
   }
 
@@ -387,7 +424,31 @@ export async function verifyApiKey(
 
   try {
     if (config.provider === 'gemini') {
-      // Gemini: 使用 models.list 端点验证
+      if (config.apiUrl) {
+        // 代理模式: 使用 OpenAI 兼容格式验证
+        const proxyEndpoint = config.apiUrl.replace(/\/+$/, '') + '/chat/completions';
+        const res = await fetch(proxyEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: config.model || 'gemini-2.5-pro',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens: 5,
+          }),
+        });
+        const latency = Date.now() - startTime;
+        if (res.ok) {
+          const data = await res.json();
+          return { valid: true, message: `✅ Gemini 代理 Key 有效`, model: data.model || config.model, latency };
+        }
+        if (res.status === 401) return { valid: false, message: '❌ API Key 无效或已过期' };
+        if (res.status === 429) return { valid: true, message: '⚠️ Key 有效但已达速率限制', model: config.model, latency };
+        return { valid: false, message: `❌ 验证失败 (${res.status})` };
+      }
+      // 原生 Gemini API 验证
       const model = config.model || 'gemini-2.0-flash';
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${config.apiKey}`
@@ -434,7 +495,9 @@ export async function verifyApiKey(
     }
 
     // OpenAI-compatible providers (openai, tongyi, deepseek, zhipu, moonshot, wenxin, custom)
-    const endpoint = config.provider === 'custom' ? config.apiUrl! : API_ENDPOINTS[config.provider];
+    const endpoint = config.apiUrl
+      ? config.apiUrl.replace(/\/+$/, '') + '/chat/completions'
+      : config.provider === 'custom' ? config.apiUrl! : API_ENDPOINTS[config.provider];
     if (!endpoint) {
       return { valid: false, message: '❌ 未配置API地址' };
     }
