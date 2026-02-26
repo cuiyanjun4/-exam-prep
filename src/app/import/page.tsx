@@ -9,6 +9,14 @@ import {
   getCloudDriveInfo,
   ParsedQuestion,
 } from '@/lib/questionParser';
+import {
+  extractPDFFromFile,
+  extractWordText,
+  cleanExtractedText,
+  analyzeExtractedContent,
+  type PDFExtractResult,
+  type ExtractionProgress,
+} from '@/lib/pdfExtractor';
 import Link from 'next/link';
 
 type ImportMethod = 'link' | 'file' | 'text';
@@ -44,6 +52,9 @@ export default function ImportPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [extractionProgress, setExtractionProgress] = useState<string>('');
+  const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
+  const [pdfAnalysis, setPdfAnalysis] = useState<{ pages: number; images: number; quality: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isParsing = stage !== 'idle' && stage !== 'done';
@@ -78,9 +89,12 @@ export default function ImportPage() {
     setResult(null);
     setParsedPreview([]);
     setShowPreview(false);
+    setExtractionWarnings([]);
+    setPdfAnalysis(null);
 
     let sourceText = '';
     let sourceLabel = '';
+    let pdfResult: PDFExtractResult | null = null;
 
     if (method === 'link') {
       if (!linkInput.trim()) return;
@@ -88,86 +102,138 @@ export default function ImportPage() {
     } else if (method === 'file') {
       if (!selectedFile) return;
       sourceLabel = `文件导入: ${selectedFile.name}`;
-      if (selectedFile.name.endsWith('.txt') || selectedFile.name.endsWith('.md')) {
-        sourceText = await selectedFile.text();
-      }
     } else {
       if (!textInput.trim()) return;
       sourceText = textInput;
       sourceLabel = '文本粘贴导入';
     }
 
-    // 模拟解析流程
-    setStage('connecting'); await wait(800);
-    setStage('downloading'); await wait(1000);
-    setStage('extracting'); await wait(1200);
+    // ====== 阶段1: 连接 ======
+    setStage('connecting');
+    await wait(500);
 
-    // 真正解析文本（如果有文本的话）
+    // ====== 阶段2: 提取文本 ======
+    setStage('downloading');
+    setExtractionProgress('正在读取文件内容...');
+
+    if (method === 'file' && selectedFile) {
+      const fileName = selectedFile.name.toLowerCase();
+
+      try {
+        if (fileName.endsWith('.pdf')) {
+          // *** 真实 PDF 提取 ***
+          setExtractionProgress('正在加载 PDF 引擎...');
+          pdfResult = await extractPDFFromFile(selectedFile, (progress) => {
+            setExtractionProgress(progress.status);
+          });
+
+          // 清洗和分析
+          setExtractionProgress('正在清洗和结构化文本...');
+          sourceText = cleanExtractedText(pdfResult.fullText);
+
+          const analysis = analyzeExtractedContent(pdfResult);
+          setPdfAnalysis({
+            pages: pdfResult.totalPages,
+            images: pdfResult.pagesWithImages.length,
+            quality: analysis.textQuality,
+          });
+          setExtractionWarnings(analysis.warnings);
+
+        } else if (fileName.endsWith('.docx')) {
+          // *** DOCX 提取 ***
+          setExtractionProgress('正在解析 Word 文档...');
+          sourceText = await extractWordText(selectedFile);
+
+        } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+          sourceText = await selectedFile.text();
+        } else {
+          sourceText = await selectedFile.text();
+        }
+      } catch (err) {
+        console.error('文件提取错误:', err);
+        setExtractionWarnings([`文件提取出错: ${err instanceof Error ? err.message : '未知错误'}，请尝试其他格式`]);
+        setStage('idle');
+        return;
+      }
+    }
+
+    // ====== 阶段3: AI 识别题目 ======
+    setStage('extracting');
+    setExtractionProgress('AI 正在识别题干、选项与答案...');
+    await wait(400);
+
     let parsed: ParsedQuestion[] = [];
-    if (sourceText) {
+    if (sourceText && sourceText.length > 10) {
       parsed = parseTextToQuestions(sourceText, sourceLabel);
     }
 
-    // 如果没有真实文本（网盘链接或非txt文件），生成模拟数据
-    if (parsed.length === 0) {
-      const count = Math.floor(Math.random() * 15) + 8;
-      const demoModules: { m: Module; s: SubType; hasImg: boolean; imgType?: ParsedQuestion['imageType'] }[] = [
-        { m: '常识判断', s: '法律', hasImg: false },
-        { m: '常识判断', s: '科技', hasImg: false },
-        { m: '言语理解', s: '逻辑填空', hasImg: false },
-        { m: '言语理解', s: '片段阅读', hasImg: false },
-        { m: '数量关系', s: '数学运算', hasImg: false },
-        { m: '判断推理', s: '图形推理', hasImg: true, imgType: 'figure-reasoning' },
-        { m: '判断推理', s: '定义判断', hasImg: false },
-        { m: '判断推理', s: '类比推理', hasImg: false },
-        { m: '判断推理', s: '逻辑判断', hasImg: false },
-        { m: '资料分析', s: '表格资料', hasImg: true, imgType: 'chart-data' },
-        { m: '资料分析', s: '图表资料', hasImg: true, imgType: 'chart-data' },
-        { m: '资料分析', s: '文字资料', hasImg: false },
-      ];
+    // 如果PDF含图片页面但没解析到题目，对图片页面做特殊标记
+    if (pdfResult && pdfResult.pagesWithImages.length > 0) {
+      const imagePages = pdfResult.pages.filter(p => p.hasImages);
+      for (const page of imagePages) {
+        // 检查该页文本是否已经被解析为题目
+        const pageTextInQuestion = parsed.some(q =>
+          page.text.length > 20 && q.content.includes(page.text.substring(0, Math.min(30, page.text.length)))
+        );
 
-      parsed = Array.from({ length: count }).map((_, i) => {
-        const template = demoModules[i % demoModules.length];
-        const tags = [sourceLabel, template.m];
-        if (template.hasImg) {
-          tags.push('含图片');
-          if (template.imgType === 'figure-reasoning') tags.push('图形推理');
-          if (template.imgType === 'chart-data') tags.push('图表数据');
+        if (!pageTextInQuestion && page.text.trim().length > 10) {
+          // 这页有图片且文本没被匹配到题目中，作为含图片的特殊题目
+          const imgQ: ParsedQuestion = {
+            content: `[📸 第${page.pageNum}页含图片内容] ${page.text.substring(0, 200)}${page.text.length > 200 ? '...' : ''}`,
+            options: [
+              { key: 'A', text: '需要查看原始PDF中的图片' },
+              { key: 'B', text: '需要查看原始PDF中的图片' },
+              { key: 'C', text: '需要查看原始PDF中的图片' },
+              { key: 'D', text: '需要查看原始PDF中的图片' },
+            ],
+            answer: 'A',
+            explanation: `此题来自PDF第${page.pageNum}页，包含${page.imageCount}张图片。图片内容需要查看原始PDF获取。`,
+            module: '判断推理',
+            subType: '图形推理',
+            difficulty: 2,
+            hasImage: true,
+            imageType: 'figure-reasoning',
+            tags: [sourceLabel, '含图片', '需补充图片'],
+            source: sourceLabel,
+          };
+          parsed.push(imgQ);
         }
-
-        const contentPrefixes: Record<string, string> = {
-          '图形推理': '[图片题] 观察下列图形的变化规律，请从选项中选出最合适的一个：\n[图片内容已提取，需要在终端查看原始图片]',
-          '表格资料': '[图表题] 根据下表所示数据，回答以下问题：\n[表格内容已提取，包含2022-2025年各季度数据]',
-          '图表资料': '[图表题] 根据以下柱状图/折线图所示信息，回答问题：\n[图表内容已提取，需查看原始图片获取详细数据]',
-        };
-        const contentPrefix = contentPrefixes[template.s as string] || '';
-
-        return {
-          content: contentPrefix || `[AI智能识别] 第${i + 1}题（${template.m} - ${template.s}）：以下关于${template.s}的说法，正确的是？`,
-          options: [
-            { key: 'A', text: `选项A - ${template.s}相关内容` },
-            { key: 'B', text: `选项B - ${template.s}相关内容` },
-            { key: 'C', text: `选项C - ${template.s}相关内容` },
-            { key: 'D', text: `选项D - ${template.s}相关内容` },
-          ],
-          answer: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
-          explanation: `AI解析：本题考查${template.s}相关知识点。根据文档内容分析，正确答案符合${template.m}领域的基本原理。`,
-          module: template.m,
-          subType: template.s,
-          difficulty: (Math.floor(Math.random() * 3) + 1) as Difficulty,
-          hasImage: template.hasImg,
-          imageType: template.imgType,
-          tags,
-          source: sourceLabel,
-        };
-      });
+      }
     }
 
-    setStage('classifying'); await wait(800);
-    setStage('images'); await wait(800);
-    setStage('saving');
+    // 如果文本太短或解析失败（网盘链接场景），提供说明
+    if (parsed.length === 0 && method === 'link') {
+      setExtractionWarnings(prev => [
+        ...prev,
+        '网盘链接需要先手动下载文件到本地，然后使用"上传文档"功能导入。直接解析网盘链接需要登录授权，目前暂不支持。'
+      ]);
+      setStage('idle');
+      return;
+    }
 
-    // 保存到localStorage
+    if (parsed.length === 0) {
+      setExtractionWarnings(prev => [
+        ...prev,
+        '未能从文本中识别到题目。请确保文本包含标准格式的题目（题号+选项ABCD）。'
+      ]);
+      setStage('idle');
+      return;
+    }
+
+    // ====== 阶段4: 智能分类 ======
+    setStage('classifying');
+    setExtractionProgress('正在智能分类模块/子类型...');
+    await wait(600);
+
+    // ====== 阶段5: 图片检测 ======
+    setStage('images');
+    setExtractionProgress('正在检测图片题目...');
+    await wait(500);
+
+    // ====== 阶段6: 保存 ======
+    setStage('saving');
+    setExtractionProgress('正在写入题库...');
+
     const questionsToSave: Question[] = parsed.map((p, i) => ({
       id: `import-${Date.now()}-${i}`,
       module: p.module,
@@ -199,7 +265,7 @@ export default function ImportPage() {
       }
     }
 
-    await wait(600);
+    await wait(500);
     setParsedPreview(parsed);
     setResult({
       total: parsed.length,
@@ -398,6 +464,23 @@ B. 选项
         )}
 
         {/* ====== 功能说明面板 ====== */}
+        {/* 错误/警告提示（解析失败时） */}
+        {stage === 'idle' && extractionWarnings.length > 0 && !result && (
+          <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/50 rounded-xl animate-fade-in">
+            <h4 className="font-bold text-sm text-red-800 dark:text-red-300 mb-2 flex items-center gap-2">
+              ❌ 解析失败
+            </h4>
+            <ul className="space-y-1">
+              {extractionWarnings.map((w, i) => (
+                <li key={i} className="text-sm text-red-700 dark:text-red-400 flex items-start gap-1.5">
+                  <span className="mt-0.5">•</span>
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="mt-6 p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-100 dark:border-blue-800/30">
           <h3 className="font-bold text-sm text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2">
             <span>🧠</span> AI智能识别能力
@@ -447,7 +530,7 @@ B. 选项
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
                 <span className="text-xl">{stageInfo.icon}</span>
-                {stageInfo.text}
+                {extractionProgress || stageInfo.text}
               </span>
               <span className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">{stageInfo.pct}%</span>
             </div>
@@ -490,6 +573,42 @@ B. 选项
         {/* ====== 结果展示 ====== */}
         {result && (
           <div className="mt-8 space-y-4 animate-fade-in">
+            {/* PDF 分析信息 */}
+            {pdfAnalysis && (
+              <div className="p-4 bg-gradient-to-r from-sky-50 to-cyan-50 dark:from-sky-900/20 dark:to-cyan-900/20 border border-sky-200 dark:border-sky-700/50 rounded-xl">
+                <h4 className="font-bold text-sm text-sky-800 dark:text-sky-300 mb-2 flex items-center gap-2">
+                  📊 PDF 分析报告
+                </h4>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-sky-700 dark:text-sky-400">共 <b>{pdfAnalysis.pages}</b> 页</span>
+                  <span className="text-purple-700 dark:text-purple-400"><b>{pdfAnalysis.images}</b> 页含图片</span>
+                  <span className={`font-bold ${
+                    pdfAnalysis.quality === 'high' ? 'text-green-600' :
+                    pdfAnalysis.quality === 'medium' ? 'text-yellow-600' : 'text-red-600'
+                  }`}>
+                    文本质量: {pdfAnalysis.quality === 'high' ? '优秀' : pdfAnalysis.quality === 'medium' ? '一般' : '较差'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 警告信息 */}
+            {extractionWarnings.length > 0 && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl">
+                <h4 className="font-bold text-sm text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-2">
+                  ⚠️ 注意事项
+                </h4>
+                <ul className="space-y-1">
+                  {extractionWarnings.map((w, i) => (
+                    <li key={i} className="text-sm text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+                      <span className="mt-0.5">•</span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="p-8 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-200 dark:border-green-700/50 rounded-2xl text-center relative overflow-hidden">
               <div className="absolute top-2 right-2 text-6xl opacity-10 animate-bounce">🎉</div>
               <div className="text-6xl mb-4">🎉</div>
