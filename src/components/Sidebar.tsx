@@ -28,6 +28,7 @@ const toolNav = [
   { href: '/ai', icon: '🤖', label: 'AI辅导' },
   { href: '/leaderboard', icon: '🏆', label: '排行榜' },
   { href: '/workshop', icon: '🛠️', label: '创意工坊' },
+  { href: '/import', icon: '☁️', label: '智能录入' },
   { href: '/community', icon: '💬', label: '学习社区' },
 ];
 

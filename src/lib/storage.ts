@@ -100,6 +100,17 @@ export function getFavorites(): string[] {
   return getItem<string[]>(KEYS.FAVORITES, []);
 }
 
+// ==================== 自定义题目 ====================
+
+export function getCustomQuestions(): any[] {
+  return getItem<any[]>('exam-custom-questions', []);
+}
+
+export function saveCustomQuestions(questions: any[]): void {
+  const existing = getCustomQuestions();
+  setItem('exam-custom-questions', [...existing, ...questions]);
+}
+
 export function toggleFavorite(questionId: string): boolean {
   const favs = getFavorites();
   const idx = favs.indexOf(questionId);

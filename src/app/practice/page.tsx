@@ -622,55 +622,73 @@ function PracticeContent() {
 
       {/* Question Card */}
       {currentQ && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100">
-          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">{currentQ.module}</span>
-              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">{currentQ.subType}</span>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700 overflow-hidden transition-all">
+          <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs rounded-full font-bold tracking-wide shadow-sm">{currentQ.module}</span>
+              <span className="px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs rounded-full font-medium shadow-sm">{currentQ.subType}</span>
               {!isExamMode && (
-                <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full">{'⭐'.repeat(currentQ.difficulty)}</span>
+                <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs rounded-full shadow-sm flex items-center gap-1">
+                  <span className="text-[10px]">难度</span>
+                  {'⭐'.repeat(currentQ.difficulty)}
+                </span>
               )}
             </div>
             {!isExamMode && (
               <button onClick={handleToggleFavorite}
-                className={`text-xl transition-transform hover:scale-110 ${fav ? 'animate-bounce' : ''}`}>
+                className={`text-2xl transition-all hover:scale-125 active:scale-90 ${fav ? 'text-yellow-400 drop-shadow-md animate-bounce' : 'text-slate-300 hover:text-yellow-400'}`}>
                 {fav ? '⭐' : '☆'}
               </button>
             )}
           </div>
 
-          <div className="p-5">
-            <p className="text-base leading-7 whitespace-pre-wrap">{currentQ.content}</p>
+          <div className="p-6 md:p-8">
+            <p className="text-lg text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap font-medium">{currentQ.content}</p>
           </div>
 
           {/* 选项 */}
-          <div className="px-5 pb-5 space-y-2">
+          <div className="px-6 pb-8 space-y-3">
             {currentQ.options.map(opt => {
               if (isExamMode) {
                 // 考试模式：只显示选中状态，不显示对错
                 const isSelected = examAnswers[currentIndex] === opt.key;
                 return (
                   <button key={opt.key} onClick={() => handleExamAnswer(opt.key)}
-                    className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all
-                      ${isSelected ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'}`}>
-                    <span className="font-semibold mr-3">{opt.key}.</span>
-                    <span>{opt.text}</span>
+                    className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-all duration-200 group
+                      ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 shadow-md shadow-blue-500/10 scale-[1.01]' : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 hover:shadow-sm'}`}>
+                    <div className="flex items-start">
+                      <span className={`font-bold text-lg mr-4 mt-0.5 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 group-hover:text-blue-500'}`}>{opt.key}.</span>
+                      <span className="text-base leading-relaxed">{opt.text}</span>
+                    </div>
                   </button>
                 );
               }
 
               // 普通模式
-              let optClass = 'border-slate-200 hover:border-blue-400 hover:bg-blue-50';
+              let optClass = 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 hover:shadow-sm';
+              let icon = null;
+              
               if (selectedAnswer) {
-                if (opt.key === currentQ.answer) optClass = 'border-green-500 bg-green-50 text-green-800';
-                else if (opt.key === selectedAnswer && opt.key !== currentQ.answer) optClass = 'border-red-500 bg-red-50 text-red-800';
-                else optClass = 'border-slate-200 opacity-50';
+                if (opt.key === currentQ.answer) {
+                  optClass = 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 shadow-md shadow-green-500/10 scale-[1.01] z-10 relative';
+                  icon = <span className="text-green-500 text-xl ml-auto animate-bounce">✓</span>;
+                }
+                else if (opt.key === selectedAnswer && opt.key !== currentQ.answer) {
+                  optClass = 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 shadow-md shadow-red-500/10 scale-[1.01] z-10 relative animate-[shake_0.5s_ease-in-out]';
+                  icon = <span className="text-red-500 text-xl ml-auto">✗</span>;
+                }
+                else {
+                  optClass = 'border-slate-200 dark:border-slate-700 opacity-40 scale-95';
+                }
               }
               return (
                 <button key={opt.key} onClick={() => handleAnswer(opt.key)} disabled={!!selectedAnswer}
-                  className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${optClass}`}>
-                  <span className="font-semibold mr-3">{opt.key}.</span>
-                  <span>{opt.text}</span>
+                  className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-all duration-300 flex items-center ${optClass}`}>
+                  <div className="flex items-start flex-1">
+                    <span className={`font-bold text-lg mr-4 mt-0.5 ${selectedAnswer ? '' : 'text-slate-400'}`}>{opt.key}.</span>
+                    <span className="text-base leading-relaxed">{opt.text}</span>
+                  </div>
+                  {icon}
                 </button>
               );
             })}

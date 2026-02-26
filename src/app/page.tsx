@@ -50,70 +50,76 @@ export default function HomePage() {
   return (
     <div className="space-y-6">
       {/* ====== Hero: 个人档案 + 等级 ====== */}
-      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl p-6 text-white relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-500 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl shadow-blue-500/20">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 animate-pulse" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-cyan-400/20 rounded-full blur-2xl translate-y-1/2 -translate-x-1/4" />
+        
         <div className="relative z-10">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-bold tracking-tight">考公行测题库</h1>
-              <p className="text-blue-200 text-sm mt-0.5">
+              <h1 className="text-3xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
+                <span>🚀</span> 考公行测题库
+              </h1>
+              <p className="text-blue-100 text-sm font-medium">
                 {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}
               </p>
             </div>
             {game && (
-              <div className="text-right">
-                <div className="flex items-center gap-1.5 text-lg font-bold">
-                  <span>{game.titleIcon}</span>
-                  <span>{game.title}</span>
+              <div className="text-right bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/20 shadow-inner">
+                <div className="flex items-center gap-2 text-xl font-bold">
+                  <span className="text-2xl drop-shadow-md">{game.titleIcon}</span>
+                  <span className="bg-gradient-to-r from-yellow-200 to-amber-400 bg-clip-text text-transparent">{game.title}</span>
                 </div>
-                <p className="text-blue-200 text-xs mt-0.5">Lv.{game.level}</p>
+                <p className="text-blue-100 text-sm mt-0.5 font-medium">Lv.{game.level} 达人</p>
               </div>
             )}
           </div>
 
           {/* XP Progress Bar */}
           {game && (
-            <div className="mt-3">
-              <div className="flex justify-between text-xs text-blue-200 mb-1">
-                <span>经验值 {game.xp} XP</span>
-                <span>升至 Lv.{game.level + 1} 还需 {xpForLevel(game.level) - Math.floor(levelProg * xpForLevel(game.level))} XP</span>
+            <div className="mt-6 bg-black/20 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
+              <div className="flex justify-between text-sm text-blue-100 mb-2 font-medium">
+                <span className="flex items-center gap-1">✨ 经验值 {game.xp} XP</span>
+                <span>距离 Lv.{game.level + 1} 还需 {xpForLevel(game.level) - Math.floor(levelProg * xpForLevel(game.level))} XP</span>
               </div>
-              <div className="h-2 bg-blue-900/50 rounded-full overflow-hidden">
+              <div className="h-3 bg-black/30 rounded-full overflow-hidden shadow-inner">
                 <div
-                  className="h-full bg-gradient-to-r from-yellow-400 to-amber-400 rounded-full transition-all"
+                  className="h-full bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-500 rounded-full transition-all duration-1000 ease-out relative"
                   style={{ width: `${Math.round(levelProg * 100)}%` }}
-                />
+                >
+                  <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }} />
+                </div>
               </div>
             </div>
           )}
 
           {/* Quick Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-            <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
-              <p className="text-2xl font-bold">{progress?.totalAnswered || 0}</p>
-              <p className="text-blue-200 text-xs">已做题</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+            <div className="bg-white/10 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-colors group">
+              <p className="text-3xl font-black group-hover:scale-110 transition-transform origin-left">{progress?.totalAnswered || 0}</p>
+              <p className="text-blue-100 text-sm mt-1 font-medium">已做题</p>
             </div>
-            <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
-              <p className="text-2xl font-bold">{accuracy}%</p>
-              <p className="text-blue-200 text-xs">正确率</p>
+            <div className="bg-white/10 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-colors group">
+              <p className="text-3xl font-black group-hover:scale-110 transition-transform origin-left">{accuracy}%</p>
+              <p className="text-blue-100 text-sm mt-1 font-medium">正确率</p>
             </div>
-            <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
-              <p className="text-2xl font-bold">{score || '--'}</p>
-              <p className="text-blue-200 text-xs">预估分</p>
+            <div className="bg-white/10 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-colors group">
+              <p className="text-3xl font-black text-yellow-300 group-hover:scale-110 transition-transform origin-left">{score || '--'}</p>
+              <p className="text-blue-100 text-sm mt-1 font-medium">预估分</p>
             </div>
-            <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
-              <p className="text-2xl font-bold">{progress?.streak || 0}</p>
-              <p className="text-blue-200 text-xs">连续打卡(天)</p>
+            <div className="bg-white/10 rounded-2xl px-4 py-3 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-colors group">
+              <p className="text-3xl font-black text-green-300 group-hover:scale-110 transition-transform origin-left">{progress?.streak || 0}</p>
+              <p className="text-blue-100 text-sm mt-1 font-medium">连续打卡(天)</p>
             </div>
           </div>
 
           {/* 每日励志 */}
           {quote && (
-            <div className="mt-4 pt-4 border-t border-white/10 flex items-start gap-2">
-              <span className="text-blue-200 text-lg">💡</span>
-              <div>
-                <p className="text-sm text-white/90 italic">"{quote.text}"</p>
-                <p className="text-xs text-blue-200 mt-1 text-right">— {quote.author}</p>
+            <div className="mt-6 pt-4 border-t border-white/20 flex items-start gap-3">
+              <span className="text-yellow-300 text-2xl animate-bounce">💡</span>
+              <div className="flex-1">
+                <p className="text-base text-white font-medium italic leading-relaxed">"{quote.text}"</p>
+                <p className="text-sm text-blue-200 mt-1 text-right font-semibold">— {quote.author}</p>
               </div>
             </div>
           )}
@@ -121,44 +127,54 @@ export default function HomePage() {
       </div>
 
       {/* ====== 今日任务 + 打卡 ====== */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        <Link href="/practice" className="group bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-md transition-all flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">📝</div>
+      <div className="grid lg:grid-cols-3 gap-5">
+        <Link href="/practice" className="group bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/10 transition-all flex items-center gap-5 relative overflow-hidden">
+          <div className="absolute right-0 top-0 w-24 h-24 bg-blue-50 dark:bg-blue-900/20 rounded-bl-full -z-10 transition-transform group-hover:scale-110" />
+          <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/50 dark:to-blue-800/30 rounded-2xl flex items-center justify-center text-3xl group-hover:scale-110 group-hover:rotate-3 transition-all shadow-sm">📝</div>
           <div>
-            <p className="font-semibold text-slate-800">开始刷题</p>
-            <p className="text-sm text-slate-500">智能选题 · 即时解析</p>
+            <p className="font-bold text-lg text-slate-800 dark:text-slate-100">开始刷题</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">智能选题 · 即时解析</p>
           </div>
         </Link>
+        
         {reviewCount > 0 ? (
-          <Link href="/mistakes" className="group bg-red-50 rounded-xl p-5 border border-red-100 hover:border-red-300 hover:shadow-md transition-all flex items-center gap-4">
-            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">🔄</div>
+          <Link href="/mistakes" className="group bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 rounded-2xl p-6 border border-red-100 dark:border-red-800/30 hover:border-red-300 hover:shadow-xl hover:shadow-red-500/10 transition-all flex items-center gap-5 relative overflow-hidden">
+            <div className="absolute right-0 top-0 w-24 h-24 bg-red-100/50 dark:bg-red-900/20 rounded-bl-full -z-10 transition-transform group-hover:scale-110" />
+            <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center text-3xl group-hover:scale-110 group-hover:-rotate-3 transition-all shadow-sm">🔄</div>
             <div>
-              <p className="font-semibold text-red-700">复习错题</p>
-              <p className="text-sm text-red-500">{reviewCount} 道到期复习</p>
+              <p className="font-bold text-lg text-red-700 dark:text-red-400">复习错题</p>
+              <p className="text-sm text-red-500 dark:text-red-300 mt-0.5 font-medium">{reviewCount} 道到期复习</p>
             </div>
           </Link>
         ) : (
-          <div className="bg-green-50 rounded-xl p-5 border border-green-100 flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-2xl">✅</div>
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-6 border border-green-100 dark:border-green-800/30 flex items-center gap-5 relative overflow-hidden">
+            <div className="absolute right-0 top-0 w-24 h-24 bg-green-100/50 dark:bg-green-900/20 rounded-bl-full -z-10" />
+            <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center text-3xl shadow-sm">✅</div>
             <div>
-              <p className="font-semibold text-green-700">无到期复习</p>
-              <p className="text-sm text-green-500">保持好状态</p>
+              <p className="font-bold text-lg text-green-700 dark:text-green-400">无到期复习</p>
+              <p className="text-sm text-green-500 dark:text-green-300 mt-0.5 font-medium">保持好状态</p>
             </div>
           </div>
         )}
-        <div className="bg-white rounded-xl p-5 border border-slate-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center text-2xl">📅</div>
+        
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 flex items-center gap-5 relative overflow-hidden group hover:shadow-xl hover:shadow-purple-500/10 transition-all">
+          <div className="absolute right-0 top-0 w-24 h-24 bg-purple-50 dark:bg-purple-900/20 rounded-bl-full -z-10 transition-transform group-hover:scale-110" />
+          <div className="w-14 h-14 bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/50 dark:to-purple-800/30 rounded-2xl flex items-center justify-center text-3xl group-hover:scale-110 group-hover:rotate-6 transition-all shadow-sm">📅</div>
           <div>
-            <p className="font-semibold text-slate-800">连续打卡</p>
-            <p className="text-sm text-slate-500"><span className="text-purple-600 font-bold text-lg">{progress?.streak || 0}</span> 天</p>
+            <p className="font-bold text-lg text-slate-800 dark:text-slate-100">连续打卡</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5"><span className="text-purple-600 dark:text-purple-400 font-black text-xl">{progress?.streak || 0}</span> 天</p>
           </div>
         </div>
       </div>
 
       {/* ====== 六大模块 ====== */}
       <div>
-        <h2 className="text-lg font-semibold text-slate-800 mb-3">六大模块</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <span className="text-blue-500">🎯</span> 核心模块
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {MODULES.map(({ key, icon, gradient }) => {
             const mp = progress?.moduleProgress[key];
             const total = questionCounts[key] || 0;
@@ -167,18 +183,25 @@ export default function HomePage() {
             const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
 
             return (
-              <Link key={key} href={`/practice?module=${key}`} className="group relative bg-white rounded-xl p-4 border border-slate-100 hover:shadow-md hover:border-slate-200 transition-all overflow-hidden">
-                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl">{icon}</span>
-                  <div>
-                    <p className="font-semibold text-slate-800 text-sm">{key}</p>
-                    <p className="text-xs text-slate-400">{answered}/{total} 题</p>
+              <Link key={key} href={`/practice?module=${key}`} className="group relative bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 hover:shadow-xl hover:-translate-y-1 transition-all overflow-hidden">
+                <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${gradient} opacity-80 group-hover:opacity-100 transition-opacity`} />
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-700/50 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform shadow-sm">
+                    {icon}
                   </div>
-                  <span className="ml-auto text-xs font-medium text-slate-500">{acc}%</span>
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-100">{key}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">{answered}/{total} 题</p>
+                  </div>
+                  <div className="ml-auto flex flex-col items-end">
+                    <span className={`text-lg font-black ${acc >= 80 ? 'text-green-500' : acc >= 60 ? 'text-blue-500' : 'text-orange-500'}`}>{acc}%</span>
+                    <span className="text-[10px] text-slate-400 font-medium">正确率</span>
+                  </div>
                 </div>
-                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full bg-gradient-to-r ${gradient} transition-all`} style={{ width: `${pct}%` }} />
+                <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                  <div className={`h-full rounded-full bg-gradient-to-r ${gradient} transition-all duration-1000 ease-out relative`} style={{ width: `${pct}%` }}>
+                    <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }} />
+                  </div>
                 </div>
               </Link>
             );
