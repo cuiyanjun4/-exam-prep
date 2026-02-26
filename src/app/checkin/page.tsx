@@ -24,6 +24,9 @@ export default function CheckinPage() {
   });
   const [todayCheckedIn, setTodayCheckedIn] = useState(false);
 
+  const [showLottery, setShowLottery] = useState(false);
+  const [lotteryResult, setLotteryResult] = useState<string | null>(null);
+
   useEffect(() => {
     setProgress(getProgress());
     setProfile(getGameProfile());
@@ -32,6 +35,39 @@ export default function CheckinPage() {
     const stats = getDailyStats();
     setTodayCheckedIn(!!stats[today] && stats[today].totalQuestions > 0);
   }, []);
+
+  const handleLottery = () => {
+    if (!profile || profile.xp < 100) {
+      alert('积分不足，抽奖需要 100 XP');
+      return;
+    }
+    
+    // 模拟扣除积分
+    // profile.xp -= 100;
+    
+    const prizes = [
+      { name: '谢谢参与', prob: 0.4 },
+      { name: '10 XP', prob: 0.3 },
+      { name: '50 XP', prob: 0.15 },
+      { name: '100 XP', prob: 0.1 },
+      { name: '「好运连连」称号', prob: 0.04 },
+      { name: '「天选之子」称号', prob: 0.01 },
+    ];
+
+    const rand = Math.random();
+    let sum = 0;
+    let won = prizes[0].name;
+    for (const p of prizes) {
+      sum += p.prob;
+      if (rand <= sum) {
+        won = p.name;
+        break;
+      }
+    }
+
+    setLotteryResult(won);
+    setShowLottery(true);
+  };
 
   const getCalendarDays = (): CalendarDay[] => {
     const { year, month } = currentMonth;
@@ -92,16 +128,15 @@ export default function CheckinPage() {
         </div>
 
         {/* Streak badges */}
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
           {[3, 7, 14, 30, 60, 100].map(target => (
-            <div key={target} className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+            <div key={target} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold ${
               (progress?.streak || 0) >= target ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50'
             }`}>
               {(progress?.streak || 0) >= target ? '✅' : '🔒'} {target}天
             </div>
           ))}
         </div>
-
         {/* Today status */}
         <div className="mt-4 p-3 bg-white/20 rounded-xl flex items-center justify-between">
           {todayCheckedIn ? (
@@ -119,6 +154,44 @@ export default function CheckinPage() {
           )}
         </div>
       </div>
+
+      {/* 抽奖区域 */}
+      <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl p-6 text-white flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold mb-1">🎁 幸运抽奖</h3>
+          <p className="text-sm text-purple-100">每次抽奖消耗 100 XP，有机会获得稀有称号！</p>
+          <p className="text-xs text-purple-200 mt-2">当前积分: {profile?.xp || 0} XP</p>
+        </div>
+        <button 
+          onClick={handleLottery}
+          className="px-6 py-3 bg-yellow-400 text-purple-900 font-bold rounded-xl hover:bg-yellow-300 hover:scale-105 transition-all shadow-lg"
+        >
+          抽奖 (-100 XP)
+        </button>
+      </div>
+
+      {/* 抽奖结果弹窗 */}
+      {showLottery && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl transform animate-bounce-in">
+            <div className="text-6xl mb-4">
+              {lotteryResult === '谢谢参与' ? '😢' : '🎉'}
+            </div>
+            <h3 className="text-2xl font-black mb-2 text-slate-800 dark:text-slate-100">
+              {lotteryResult === '谢谢参与' ? '很遗憾' : '恭喜中奖！'}
+            </h3>
+            <p className="text-lg text-purple-600 font-bold mb-6">
+              {lotteryResult}
+            </p>
+            <button 
+              onClick={() => setShowLottery(false)}
+              className="w-full py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-200"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

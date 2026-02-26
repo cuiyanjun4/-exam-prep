@@ -8,6 +8,7 @@ import { getModuleQuestionCounts } from '@/data';
 import { getAccuracyTrend, estimateScore } from '@/lib/analytics';
 import { getRecords } from '@/lib/storage';
 import { getGameProfile, getLevelProgress, xpForLevel, GameProfile } from '@/lib/gamification';
+import { getRandomQuote } from '@/lib/motivation';
 
 const MODULES: { key: Module; icon: string; gradient: string }[] = [
   { key: '政治理论', icon: '🏛️', gradient: 'from-red-500 to-red-600' },
@@ -26,6 +27,7 @@ export default function HomePage() {
   const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({});
   const [game, setGame] = useState<GameProfile | null>(null);
   const [levelProg, setLevelProg] = useState(0);
+  const [quote, setQuote] = useState<{text: string, author: string} | null>(null);
 
   useEffect(() => {
     setProgress(getProgress());
@@ -38,6 +40,7 @@ export default function HomePage() {
     const gp = getGameProfile();
     setGame(gp);
     setLevelProg(getLevelProgress(gp));
+    setQuote(getRandomQuote());
   }, []);
 
   const accuracy = progress && progress.totalAnswered > 0
@@ -99,10 +102,21 @@ export default function HomePage() {
               <p className="text-blue-200 text-xs">预估分</p>
             </div>
             <div className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-sm">
-              <p className="text-2xl font-bold">{game?.combo || 0}<span className="text-sm font-normal text-yellow-300">🔥</span></p>
-              <p className="text-blue-200 text-xs">连击</p>
+              <p className="text-2xl font-bold">{progress?.streak || 0}</p>
+              <p className="text-blue-200 text-xs">连续打卡(天)</p>
             </div>
           </div>
+
+          {/* 每日励志 */}
+          {quote && (
+            <div className="mt-4 pt-4 border-t border-white/10 flex items-start gap-2">
+              <span className="text-blue-200 text-lg">💡</span>
+              <div>
+                <p className="text-sm text-white/90 italic">"{quote.text}"</p>
+                <p className="text-xs text-blue-200 mt-1 text-right">— {quote.author}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { addRecord, toggleFavorite, isFavorite } from '@/lib/storage';
 import { createReviewCard, calculateSM2, autoQuality } from '@/lib/sm2';
 import { upsertReviewCard } from '@/lib/storage';
 import { recordAnswer, XPEvent, GameProfile, getGameProfile, getLevelProgress } from '@/lib/gamification';
+import { getEncouragement, checkReminders, Reminder, startStudySession, recordStudyActivity, getStudySession, getDifficultyState, updateDifficulty } from '@/lib/motivation';
 import Link from 'next/link';
 
 const modules: Module[] = ['政治理论', '常识判断', '言语理解', '数量关系', '判断推理', '资料分析'];
@@ -34,6 +35,8 @@ function PracticeContent() {
   const [isRunning, setIsRunning] = useState(true);
   const [xpEvents, setXpEvents] = useState<XPEvent[]>([]);
   const [gameProfile, setGameProfile] = useState<GameProfile | null>(null);
+  const [encouragementMsg, setEncouragementMsg] = useState<string | null>(null);
+  const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
 
   // ===== 模拟考试专用状态 =====
   const [examAnswers, setExamAnswers] = useState<Record<number, string>>({});
@@ -64,6 +67,7 @@ function PracticeContent() {
 
   // Load questions
   const loadQuestions = useCallback(() => {
+    startStudySession(); // 开始新的学习会话
     let qs: Question[];
     if (modeParam === 'random') {
       qs = getRandomQuestions(20);
@@ -74,6 +78,18 @@ function PracticeContent() {
     } else {
       qs = getQuestionsByModule(selectedModule);
     }
+
+    // 渐进难度引导（仅在普通刷题模式下生效）
+    if (!isExamMode && modeParam !== 'random') {
+      const diffState = getDifficultyState();
+      // 优先筛选符合当前难度的题目
+      const targetDiffQs = qs.filter(q => q.difficulty === diffState.currentDifficulty);
+      if (targetDiffQs.length > 0) {
+        // 随机打乱
+        qs = targetDiffQs.sort(() => Math.random() - 0.5);
+      }
+    }
+
     setQuestions(qs);
     setCurrentIndex(0);
     setSelectedAnswer(null);
@@ -170,6 +186,23 @@ function PracticeContent() {
     const gameResult = recordAnswer(isCorrect, timeSpent, 60);
     setXpEvents(gameResult.events);
     setGameProfile(gameResult.profile);
+
+    // 智能提醒与鼓励
+    const session = recordStudyActivity(getStudySession());
+    const msg = getEncouragement(isCorrect, gameResult.profile.combo, session.questionsThisSession);
+    setEncouragementMsg(msg);
+
+    // 渐进难度更新
+    if (!isExamMode && modeParam !== 'random') {
+      updateDifficulty(isCorrect);
+    }
+
+    const reminders = checkReminders();
+    if (reminders.length > 0) {
+      // 优先显示高优先级提醒
+      const sorted = reminders.sort((a, b) => (a.priority === 'high' ? -1 : 1));
+      setActiveReminder(sorted[0]);
+    }
   };
 
   // ===== 考试模式：导航 =====
@@ -694,6 +727,47 @@ function PracticeContent() {
               )}
             </div>
           )}
+
+          {/* 智能鼓励 */}
+          {encouragementMsg && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-lg p-3 flex items-center gap-3">
+              <span className="text-xl">✨</span>
+              <p className="text-sm text-amber-800 font-medium">{encouragementMsg}</p>
+            </div>
+          )}
+
+          {/* 智能提醒 */}
+          {activeReminder && (
+            <div className={`rounded-lg p-4 flex items-start gap-3 border ${
+              activeReminder.priority === 'high' ? 'bg-red-50 border-red-100' :
+              activeReminder.priority === 'medium' ? 'bg-orange-50 border-orange-100' :
+              'bg-blue-50 border-blue-100'
+            }`}>
+              <span className="text-2xl">{activeReminder.icon}</span>
+              <div className="flex-1">
+                <h4 className={`text-sm font-bold mb-1 ${
+                  activeReminder.priority === 'high' ? 'text-red-800' :
+                  activeReminder.priority === 'medium' ? 'text-orange-800' :
+                  'text-blue-800'
+                }`}>{activeReminder.title}</h4>
+                <p className={`text-xs leading-relaxed ${
+                  activeReminder.priority === 'high' ? 'text-red-600' :
+                  activeReminder.priority === 'medium' ? 'text-orange-600' :
+                  'text-blue-600'
+                }`}>{activeReminder.message}</p>
+                {activeReminder.action && (
+                  <button onClick={() => setActiveReminder(null)} className={`mt-2 text-xs px-3 py-1.5 rounded-full font-medium ${
+                    activeReminder.priority === 'high' ? 'bg-red-100 text-red-700 hover:bg-red-200' :
+                    activeReminder.priority === 'medium' ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' :
+                    'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  }`}>
+                    {activeReminder.action}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="bg-slate-50 rounded-lg p-4">
             <h3 className="font-semibold text-sm text-slate-600 mb-2">📖 详细解析</h3>
             <p className="text-sm leading-6 whitespace-pre-wrap">{currentQ.explanation}</p>

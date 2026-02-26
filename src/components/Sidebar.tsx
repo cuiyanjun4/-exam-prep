@@ -13,6 +13,7 @@ const mainNav = [
   { href: '/mock', icon: '📋', label: '模拟考试' },
   { href: '/special', icon: '🎯', label: '专项突破' },
   { href: '/speed', icon: '⚡', label: '限时速刷' },
+  { href: '/pk', icon: '⚔️', label: '在线PK' },
   { href: '/search', icon: '🔍', label: '搜索题目' },
 ];
 
@@ -26,6 +27,7 @@ const toolNav = [
   { href: '/methods', icon: '📚', label: '学习方法' },
   { href: '/ai', icon: '🤖', label: 'AI辅导' },
   { href: '/leaderboard', icon: '🏆', label: '排行榜' },
+  { href: '/workshop', icon: '🛠️', label: '创意工坊' },
   { href: '/community', icon: '💬', label: '学习社区' },
 ];
 
