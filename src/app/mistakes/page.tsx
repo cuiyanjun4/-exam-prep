@@ -6,6 +6,7 @@ import { getQuestionsByIds } from '@/data';
 import { Question, Module, MajorBlock, BLOCK_MODULES, ReviewCard } from '@/types';
 import { getMistakeCategories, getMistakesByBlock, getMistakeStats, updateMistakeStatus, autoClassifyMistake } from '@/lib/mistakeManager';
 import { getTypeInfo } from '@/data/questionTypes';
+import { exportMistakes } from '@/lib/pdf-export';
 import Link from 'next/link';
 
 type ViewMode = 'block' | 'module' | 'errorType' | 'all';
@@ -86,6 +87,15 @@ export default function MistakesPage() {
           <p className="text-slate-500 text-sm mt-1">自动分类 · 错因分析 · 举一反三 · 心流引导</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportMistakes(filteredQuestions.map(q => ({
+              content: q.content, options: q.options, answer: q.answer,
+              explanation: q.explanation, module: q.module, subType: q.subType,
+            })))}
+            className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-sm font-medium hover:bg-purple-200 transition-colors"
+          >
+            📄 导出PDF
+          </button>
           {reviewCards.length > 0 && (
             <Link href="/practice?mode=review" className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-medium hover:bg-red-200 transition-colors">
               🔄 {reviewCards.length} 道待复习

@@ -6,6 +6,7 @@ import { getQuestionsByIds } from '@/data';
 import { Question, Module } from '@/types';
 import { getBoxCounts } from '@/lib/leitner';
 import { getReviewCards } from '@/lib/storage';
+import { exportFavorites } from '@/lib/pdf-export';
 import Link from 'next/link';
 
 export default function FavoritesPage() {
@@ -25,7 +26,20 @@ export default function FavoritesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">⭐ 收藏夹</h1>
-        <span className="text-sm text-slate-500">共 {favQuestions.length} 道收藏</span>
+        <div className="flex items-center gap-3">
+          {favQuestions.length > 0 && (
+            <button
+              onClick={() => exportFavorites(favQuestions.map(q => ({
+                content: q.content, options: q.options, answer: q.answer,
+                explanation: q.explanation, module: q.module, subType: q.subType,
+              })))}
+              className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-sm font-medium hover:bg-purple-200 transition-colors"
+            >
+              📄 导出PDF
+            </button>
+          )}
+          <span className="text-sm text-slate-500">共 {favQuestions.length} 道收藏</span>
+        </div>
       </div>
 
       {/* Leitner Boxes */}

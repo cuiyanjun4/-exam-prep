@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,18 +25,29 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            const t = localStorage.getItem('theme');
+            const d = (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme:dark)').matches));
+            document.documentElement.classList.add(d ? 'dark' : 'light');
+          } catch(e) {}
+        `}} />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50 text-slate-800`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors`}
       >
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 lg:ml-0 mt-12 lg:mt-0">
-            <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-              {children}
-            </div>
-          </main>
-        </div>
+        <ThemeProvider>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 lg:ml-0 mt-12 lg:mt-0">
+              <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+                {children}
+              </div>
+            </main>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );
