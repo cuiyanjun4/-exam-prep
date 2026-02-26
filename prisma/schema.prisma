@@ -1,0 +1,216 @@
+// Prisma Schema for 考公行测题库
+// 目标数据库: Neon PostgreSQL (Serverless)
+// 使用说明:
+//   1. npm install prisma @prisma/client
+//   2. npx prisma generate
+//   3. npx prisma db push (开发) 或 npx prisma migrate dev (生产)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== 用户 ====================
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  nickname      String   @default("")
+  avatar        String   @default("🧑‍💼") // emoji 头像
+  passwordHash  String
+  email         String?  @unique
+  bio           String?
+  targetScore   Int?     // 目标分数
+  targetExamDate DateTime? // 目标考试日期
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime @default(now())
+
+  // 游戏化
+  xp            Int      @default(0)
+  level         Int      @default(1)
+  title         String   @default("备考萌新")
+  titleIcon     String   @default("🌱")
+  combo         Int      @default(0)
+  maxCombo      Int      @default(0)
+  streak        Int      @default(0)
+  lastActiveDate String  @default("")
+
+  // 关系
+  records       AnswerRecord[]
+  dailyStats    DailyStats[]
+  reviewCards   ReviewCard[]
+  achievements  UserAchievement[]
+  favorites     UserFavorite[]
+  notes         CornellNote[]
+  speedSessions SpeedSession[]
+
+  @@index([xp(sort: Desc)]) // 排行榜索引
+}
+
+// ==================== 题目 ====================
+
+model Question {
+  id          String   @id // e.g. "cs-001"
+  module      String   // 常识判断 | 言语理解 | ...
+  subType     String   // 政治 | 法律 | ...
+  difficulty  Int      @default(2) // 1~4
+  year        String?  // 年份
+  source      String?  // 来源
+  content     String   // 题干（支持Markdown）
+  optionsJson String   // JSON: [{key:"A",text:"..."},...]
+  answer      String   // A|B|C|D
+  explanation String   // 详细解析
+  tagsJson    String   @default("[]") // JSON string[]
+  relatedKnowledge String?
+
+  isActive    Boolean  @default(true) // 软删除
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 统计缓存（定期刷新）
+  totalAttempts Int    @default(0)
+  correctRate   Float  @default(0) // 0~1
+  avgTimeSpent  Float  @default(0) // 秒
+
+  records       AnswerRecord[]
+  reviewCards   ReviewCard[]
+  favorites     UserFavorite[]
+
+  @@index([module, subType])
+  @@index([module, difficulty])
+  @@index([isActive])
+}
+
+// ==================== 做题记录 ====================
+
+model AnswerRecord {
+  id          String   @id @default(cuid())
+  userId      String
+  questionId  String
+  userAnswer  String
+  isCorrect   Boolean
+  timeSpent   Int      // 秒
+  module      String
+  subType     String
+  feynmanNote String?
+  createdAt   DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, module])
+  @@index([questionId])
+}
+
+// ==================== 间隔重复 ====================
+
+model ReviewCard {
+  id          String   @id @default(cuid())
+  userId      String
+  questionId  String
+  easeFactor  Float    @default(2.5)
+  interval    Int      @default(1)
+  repetitions Int      @default(0)
+  nextReview  DateTime
+  lastReview  DateTime @default(now())
+  leitnerBox  Int      @default(1) // 1~5
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId, nextReview])
+}
+
+// ==================== 每日统计 ====================
+
+model DailyStats {
+  id              String   @id @default(cuid())
+  userId          String
+  date            String   // YYYY-MM-DD
+  totalQuestions  Int      @default(0)
+  correctCount    Int      @default(0)
+  totalTime       Int      @default(0) // 秒
+  moduleStatsJson String   @default("{}") // JSON Record<Module, {total,correct}>
+  xpEarned        Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date(sort: Desc)])
+}
+
+// ==================== 成就 ====================
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String   // 对应 gamification.ts 中的 id
+  unlockedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+}
+
+// ==================== 收藏 ====================
+
+model UserFavorite {
+  id         String   @id @default(cuid())
+  userId     String
+  questionId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+}
+
+// ==================== 康奈尔笔记 ====================
+
+model CornellNote {
+  id      String   @id @default(cuid())
+  userId  String
+  date    String
+  topic   String
+  module  String
+  cues    String   // 线索栏
+  notes   String   // 笔记栏
+  summary String   // 总结栏
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, module])
+}
+
+// ==================== 限时速刷 ====================
+
+model SpeedSession {
+  id                  String   @id @default(cuid())
+  userId              String
+  mode                String   // block | module | subtype
+  target              String   // 专项/模块名
+  tier                Int      @default(3) // 速刷等级 1/2/3
+  totalQuestions      Int
+  answeredCount       Int
+  correctCount        Int
+  avgTimePerQuestion  Float
+  timeLimit           Int      // 总时限秒
+  questionTimesJson   String   @default("[]") // JSON number[]
+  isPR                Boolean  @default(false)
+  startedAt           DateTime @default(now())
+  endedAt             DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mode, target])
+  @@index([userId, startedAt(sort: Desc)])
+}
