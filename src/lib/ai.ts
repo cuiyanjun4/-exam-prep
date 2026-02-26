@@ -105,7 +105,7 @@ export const PROVIDER_META: Record<AIProvider, { icon: string; color: string; de
 };
 
 /**
- * 调用AI接口（兼容 OpenAI / Anthropic 格式）
+ * 调用AI接口（兼容 OpenAI / Anthropic / Gemini 格式）
  */
 export async function chatWithAI(
   config: AIConfig,
@@ -368,6 +368,116 @@ async function handleStream(
   }
 
   return fullText;
+}
+
+// ==================== API Key 验证 ====================
+
+/**
+ * 验证 API Key 是否可用
+ * 发送一个简单请求检测 key 是否有效
+ */
+export async function verifyApiKey(
+  config: AIConfig
+): Promise<{ valid: boolean; message: string; model?: string; latency?: number }> {
+  if (!config.apiKey) {
+    return { valid: false, message: '请先输入 API Key' };
+  }
+
+  const startTime = Date.now();
+
+  try {
+    if (config.provider === 'gemini') {
+      // Gemini: 使用 models.list 端点验证
+      const model = config.model || 'gemini-2.0-flash';
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${config.apiKey}`
+      );
+      const latency = Date.now() - startTime;
+      if (res.ok) {
+        const data = await res.json();
+        return { valid: true, message: `✅ Gemini API Key 有效`, model: data.displayName || model, latency };
+      }
+      const err = await res.json().catch(() => ({}));
+      if (res.status === 400 || res.status === 403) {
+        return { valid: false, message: `❌ API Key 无效: ${(err as Record<string, unknown>).error?.toString() || '认证失败'}` };
+      }
+      return { valid: false, message: `❌ 验证失败 (${res.status})` };
+    }
+
+    if (config.provider === 'anthropic') {
+      // Anthropic: 发送一个最小请求
+      const res = await fetch(API_ENDPOINTS.anthropic, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2024-10-22',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: config.model || 'claude-3-5-haiku-20241022',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      });
+      const latency = Date.now() - startTime;
+      if (res.ok) {
+        return { valid: true, message: `✅ Anthropic API Key 有效`, model: config.model, latency };
+      }
+      if (res.status === 401) {
+        return { valid: false, message: '❌ API Key 无效或已过期' };
+      }
+      if (res.status === 429) {
+        return { valid: true, message: '⚠️ API Key 有效但已达速率限制', model: config.model, latency };
+      }
+      return { valid: false, message: `❌ 验证失败 (${res.status})` };
+    }
+
+    // OpenAI-compatible providers (openai, tongyi, deepseek, zhipu, moonshot, wenxin, custom)
+    const endpoint = config.provider === 'custom' ? config.apiUrl! : API_ENDPOINTS[config.provider];
+    if (!endpoint) {
+      return { valid: false, message: '❌ 未配置API地址' };
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model || 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+      }),
+    });
+    const latency = Date.now() - startTime;
+
+    if (res.ok) {
+      const data = await res.json();
+      const modelUsed = data.model || config.model;
+      return { valid: true, message: `✅ API Key 有效`, model: modelUsed, latency };
+    }
+    if (res.status === 401) {
+      return { valid: false, message: '❌ API Key 无效或已过期' };
+    }
+    if (res.status === 429) {
+      return { valid: true, message: '⚠️ API Key 有效但已达速率限制', model: config.model, latency };
+    }
+    if (res.status === 404) {
+      return { valid: false, message: `❌ 模型 ${config.model} 不存在或无权访问` };
+    }
+    const errText = await res.text().catch(() => '');
+    return { valid: false, message: `❌ 验证失败 (${res.status}): ${errText.slice(0, 100)}` };
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      if (error.message.includes('fetch')) {
+        return { valid: false, message: '❌ 无法连接到API服务器，请检查网络' };
+      }
+      return { valid: false, message: `❌ 验证出错: ${error.message}` };
+    }
+    return { valid: false, message: '❌ 验证出错: 未知错误' };
+  }
 }
 
 // ==================== 预设Prompt模板 ====================

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { getSettings, setSettings, exportAllData, importAllData, clearAllData, defaultSettings } from '@/lib/storage';
 import { AppSettings, AIProvider } from '@/types';
-import { PROVIDER_MODELS, PROVIDER_LABELS } from '@/lib/ai';
+import { PROVIDER_MODELS, PROVIDER_LABELS, verifyApiKey } from '@/lib/ai';
 
 const providers: AIProvider[] = ['openai', 'anthropic', 'gemini', 'tongyi', 'wenxin', 'deepseek', 'zhipu', 'moonshot', 'custom'];
 
@@ -12,6 +12,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
+  const [verifyResult, setVerifyResult] = useState<{ valid: boolean; message: string; model?: string; latency?: number } | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -103,18 +105,58 @@ export default function SettingsPage() {
         {/* API Key */}
         <div>
           <label className="block text-sm text-slate-600 mb-1">API Key</label>
-          <input
-            type="password"
-            value={settings.aiConfig.apiKey}
-            onChange={e => updateAI('apiKey', e.target.value)}
-            placeholder="输入你的 API Key..."
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
-          />
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={settings.aiConfig.apiKey}
+              onChange={e => { updateAI('apiKey', e.target.value); setVerifyResult(null); }}
+              placeholder="输入你的 API Key..."
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+            />
+            <button
+              onClick={async () => {
+                setVerifying(true);
+                setVerifyResult(null);
+                try {
+                  const result = await verifyApiKey(settings.aiConfig);
+                  setVerifyResult(result);
+                } catch {
+                  setVerifyResult({ valid: false, message: '❌ 验证异常' });
+                }
+                setVerifying(false);
+              }}
+              disabled={verifying || !settings.aiConfig.apiKey}
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                verifying
+                  ? 'bg-slate-100 text-slate-400 cursor-wait'
+                  : !settings.aiConfig.apiKey
+                    ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                    : 'bg-emerald-500 text-white hover:bg-emerald-600'
+              }`}
+            >
+              {verifying ? '⏳ 验证中...' : '🔑 验证'}
+            </button>
+          </div>
+          {verifyResult && (
+            <div className={`mt-2 p-2.5 rounded-lg text-sm ${
+              verifyResult.valid
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              <p className="font-medium">{verifyResult.message}</p>
+              {verifyResult.model && <p className="text-xs mt-0.5 opacity-70">模型: {verifyResult.model}</p>}
+              {verifyResult.latency && <p className="text-xs mt-0.5 opacity-70">响应延迟: {verifyResult.latency}ms</p>}
+            </div>
+          )}
           <p className="text-xs text-slate-400 mt-1">
             {settings.aiConfig.provider === 'openai' && '从 platform.openai.com 获取'}
+            {settings.aiConfig.provider === 'anthropic' && '从 console.anthropic.com 获取'}
+            {settings.aiConfig.provider === 'gemini' && '从 aistudio.google.com 获取'}
             {settings.aiConfig.provider === 'tongyi' && '从 dashscope.console.aliyun.com 获取'}
             {settings.aiConfig.provider === 'wenxin' && '从 console.bce.baidu.com 获取'}
             {settings.aiConfig.provider === 'deepseek' && '从 platform.deepseek.com 获取'}
+            {settings.aiConfig.provider === 'zhipu' && '从 open.bigmodel.cn 获取'}
+            {settings.aiConfig.provider === 'moonshot' && '从 platform.moonshot.cn 获取'}
             {settings.aiConfig.provider === 'custom' && '使用您自定义API的Key'}
           </p>
         </div>
