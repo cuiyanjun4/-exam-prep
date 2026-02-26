@@ -5,7 +5,7 @@ import { getSettings, setSettings, exportAllData, importAllData, clearAllData, d
 import { AppSettings, AIProvider } from '@/types';
 import { PROVIDER_MODELS, PROVIDER_LABELS } from '@/lib/ai';
 
-const providers: AIProvider[] = ['openai', 'anthropic', 'tongyi', 'wenxin', 'deepseek', 'zhipu', 'moonshot', 'custom'];
+const providers: AIProvider[] = ['openai', 'anthropic', 'gemini', 'tongyi', 'wenxin', 'deepseek', 'zhipu', 'moonshot', 'custom'];
 
 export default function SettingsPage() {
   const [settings, setLocalSettings] = useState<AppSettings>(defaultSettings);

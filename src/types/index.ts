@@ -87,7 +87,7 @@ export interface UserProgress {
 
 // ==================== AI 相关 ====================
 
-export type AIProvider = 'openai' | 'anthropic' | 'tongyi' | 'wenxin' | 'deepseek' | 'zhipu' | 'moonshot' | 'custom';
+export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'tongyi' | 'wenxin' | 'deepseek' | 'zhipu' | 'moonshot' | 'custom';
 
 export interface AIConfig {
   provider: AIProvider;

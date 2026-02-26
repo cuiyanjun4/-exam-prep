@@ -1,9 +1,10 @@
 /**
- * AI 服务层 - 支持多模型切换（2026.02 更新）
+ * AI 服务层 - 支持多模型切换（2026.07 更新）
  * 
  * 支持的模型：
  * - OpenAI (o3-mini, GPT-5, GPT-4o, GPT-4o-mini)
- * - Anthropic (Claude 4 Opus, Claude 4 Sonnet, Claude 3.5 Haiku)
+ * - Anthropic (Claude Opus 4, Claude Sonnet 4, Claude 3.5 Haiku)
+ * - Google Gemini (Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash)
  * - 通义千问 (Qwen3-Max, Qwen3-Plus, Qwen3-Turbo, Qwen-Coder-Plus)
  * - 文心一言 (ERNIE 4.5, ERNIE 4.0, ERNIE 3.5)
  * - DeepSeek (DeepSeek-V3, DeepSeek-R1, DeepSeek-Coder-V3)
@@ -18,6 +19,7 @@ import { AIConfig, AIMessage, AIProvider } from '@/types';
 const API_ENDPOINTS: Record<AIProvider, string> = {
   openai: 'https://api.openai.com/v1/chat/completions',
   anthropic: 'https://api.anthropic.com/v1/messages',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
   tongyi: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
   wenxin: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions_pro',
   deepseek: 'https://api.deepseek.com/v1/chat/completions',
@@ -26,7 +28,7 @@ const API_ENDPOINTS: Record<AIProvider, string> = {
   custom: '',
 };
 
-// 各提供商的可选模型（2026.02.26 更新）
+// 各提供商的可选模型（2026.07 更新）
 export const PROVIDER_MODELS: Record<AIProvider, { label: string; value: string; tag?: string }[]> = {
   openai: [
     { label: 'o3-mini', value: 'o3-mini', tag: '推理' },
@@ -38,6 +40,12 @@ export const PROVIDER_MODELS: Record<AIProvider, { label: string; value: string;
     { label: 'Claude Opus 4', value: 'claude-opus-4-20250514', tag: '最强' },
     { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514', tag: '均衡' },
     { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku-20241022', tag: '快速' },
+  ],
+  gemini: [
+    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro-preview-06-05', tag: '最强' },
+    { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash-preview-05-20', tag: '均衡' },
+    { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash', tag: '快速' },
+    { label: 'Gemini 2.0 Flash Lite', value: 'gemini-2.0-flash-lite', tag: '轻量' },
   ],
   tongyi: [
     { label: 'Qwen3-Max', value: 'qwen3-max', tag: '最强' },
@@ -73,6 +81,7 @@ export const PROVIDER_MODELS: Record<AIProvider, { label: string; value: string;
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  gemini: 'Google Gemini',
   tongyi: '通义千问 (阿里)',
   wenxin: '文心一言 (百度)',
   deepseek: 'DeepSeek',
@@ -85,6 +94,7 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
 export const PROVIDER_META: Record<AIProvider, { icon: string; color: string; description: string }> = {
   openai: { icon: '🟢', color: 'emerald', description: 'GPT-5 / o3-mini 推理强大' },
   anthropic: { icon: '🟠', color: 'orange', description: 'Claude 4 系列，安全可靠' },
+  gemini: { icon: '💎', color: 'cyan', description: 'Gemini 2.5 Pro，Google最新旗舰' },
   tongyi: { icon: '🔵', color: 'blue', description: '阿里通义千问，中文优秀' },
   wenxin: { icon: '🔴', color: 'red', description: '百度文心一言，国产领先' },
   deepseek: { icon: '🟣', color: 'purple', description: 'DeepSeek-R1 推理王者' },
@@ -112,6 +122,11 @@ export async function chatWithAI(
   // Anthropic 使用不同的请求格式
   if (config.provider === 'anthropic') {
     return await callAnthropic(config, messages, onStream);
+  }
+
+  // Google Gemini 使用不同的请求格式
+  if (config.provider === 'gemini') {
+    return await callGemini(config, messages, onStream);
   }
 
   try {
@@ -196,6 +211,93 @@ async function callAnthropic(
     if (error instanceof Error) throw new Error(`Claude调用失败: ${error.message}`);
     throw new Error('Claude调用失败: 未知错误');
   }
+}
+
+/**
+ * Google Gemini API 专用调用
+ */
+async function callGemini(
+  config: AIConfig,
+  messages: AIMessage[],
+  onStream?: (text: string) => void
+): Promise<string> {
+  const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+  const chatMsgs = messages.filter(m => m.role !== 'system').map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const model = config.model || 'gemini-2.5-flash-preview-05-20';
+  const action = onStream ? 'streamGenerateContent' : 'generateContent';
+  const endpoint = `${API_ENDPOINTS.gemini}/${model}:${action}?key=${config.apiKey}`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: chatMsgs,
+        systemInstruction: systemMsg ? { parts: [{ text: systemMsg }] } : undefined,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Gemini接口错误 (${response.status}): ${err}`);
+    }
+
+    if (onStream && response.body) {
+      return await handleGeminiStream(response.body, onStream);
+    }
+
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '无响应内容';
+  } catch (error: unknown) {
+    if (error instanceof Error) throw new Error(`Gemini调用失败: ${error.message}`);
+    throw new Error('Gemini调用失败: 未知错误');
+  }
+}
+
+/**
+ * Gemini 流式响应处理
+ */
+async function handleGeminiStream(
+  body: ReadableStream<Uint8Array>,
+  onStream: (text: string) => void
+): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    
+    // Gemini streams JSON array chunks
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
+      try {
+        const cleanLine = trimmed.startsWith(',') ? trimmed.slice(1) : trimmed;
+        const parsed = JSON.parse(cleanLine);
+        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (text) {
+          fullText += text;
+          onStream(fullText);
+        }
+      } catch { /* ignore parse errors on partial chunks */ }
+    }
+  }
+  return fullText;
 }
 
 /**
